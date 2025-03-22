@@ -3,7 +3,6 @@
 import requests
 from datetime import datetime, timedelta
 
-API_KEY = "e2e1e3ac-f31e-4e82-9c42-b3e9d6b54739"
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
 def get_latest_cves(limit=10):
