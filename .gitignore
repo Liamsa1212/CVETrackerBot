@@ -1,20 +1,13 @@
-# Byte-compiled / optimized / DLL files
+# Ignore Python cache
 __pycache__/
 *.py[cod]
-*$py.class
 
-# Virtual environments
+# Virtual environment
 venv/
 env/
 
-# macOS
-.DS_Store
-
-# Config files with secrets
+# Config file with secrets
 config.py
 
-# VS Code settings (optional)
-.vscode/
-
-# Logs and junk
-*.log
+# macOS
+.DS_Store
