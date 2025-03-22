@@ -1,5 +1,8 @@
 # 🛡️ CVE Alert Bot
 
+![logo](https://github.com/Liamsa1212/CVETrackerBot/blob/main/logo.jpg?raw=true)
+
+
 A Python-based Telegram bot that notifies you of the latest CVEs (Common Vulnerabilities and Exposures) — complete with summaries and Proof-of-Concept (PoC) links when available. Powered by Pyrogram and the CIRCL CVE API.
 
 ## 🚀 Features
