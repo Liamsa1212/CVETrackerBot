@@ -1,7 +1,7 @@
 # 🛡️ CVE Alert Bot
 
 <p align="center">
-  <img src="https://github.com/Liamsa1212/CVETrackerBot/blob/main/logo.jpg?raw=true" alt="logo">
+  <img src="https://github.com/Liamsa1212/CVETrackerBot/blob/main/logo.jpg?raw=true" alt="CVE Tracker bot">
 </p>
 
 
