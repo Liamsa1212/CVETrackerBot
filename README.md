@@ -20,7 +20,6 @@ A Python-based Telegram bot that notifies you of the latest CVEs (Common Vulnera
 
 - Python 3.8+
 - Telegram Bot Token (via [@BotFather](https://t.me/BotFather))
-- Telegram API ID & Hash (from [my.telegram.org](https://my.telegram.org))
 
 Install dependencies:
 
