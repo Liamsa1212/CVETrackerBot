@@ -20,6 +20,8 @@ import nest_asyncio
 SUBSCRIBERS_FILE = "subscribers.json"
 SENT_CVES_FILE = "sent_cves.json"
 FILTER_TYPE, FILTER_VALUE = range(2)
+DELETE_FILTER_TYPE, DELETE_FILTER_VALUE = range(2, 4)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,9 +73,11 @@ def get_main_menu():
         ],
         [
             InlineKeyboardButton("🧩 Filter Wizard", callback_data="filterwizard"),
-            InlineKeyboardButton("📋 My Filters", callback_data="filterlist")
-        ]
+            InlineKeyboardButton("🧹 Delete Filter", callback_data="deletefilter")
+        ],
+        [InlineKeyboardButton("📋 My Filters", callback_data="filterlist")]
     ])
+
 
 # ─────────────────────────────
 # Bot Commands
@@ -181,6 +185,44 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Canceled.")
     return ConversationHandler.END
 
+async def delete_filter_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🗑️ Vendor", callback_data="vendor")],
+        [InlineKeyboardButton("🗑️ Keyword", callback_data="keyword")],
+        [InlineKeyboardButton("🗑️ CWE", callback_data="cwe")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🧹 What type of filter do you want to remove?", reply_markup=reply_markup)
+    return DELETE_FILTER_TYPE
+
+async def receive_delete_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["delete_type"] = query.data
+    await query.edit_message_text(f"✏️ Send the {query.data} you want to delete from your filters:")
+    return DELETE_FILTER_VALUE
+
+async def receive_delete_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = str(update.effective_chat.id)
+    filters = load_filters()
+    user_filters = filters.get(chat_id, {})
+    ftype = context.user_data["delete_type"]
+    value = update.message.text.strip().lower()
+
+    if ftype in user_filters and value in user_filters[ftype]:
+        user_filters[ftype].remove(value)
+        if not user_filters[ftype]:
+            del user_filters[ftype]
+        filters[chat_id] = user_filters
+        save_filters(filters)
+        msg = f"🗑️ Removed {value} from your {ftype} filters."
+    else:
+        msg = f"⚠️ {value} not found in your {ftype} filters."
+
+    await update.message.reply_text(escape_markdown(msg, 2), parse_mode="MarkdownV2")
+    return ConversationHandler.END
+
+
 # ─────────────────────────────
 # Inline Buttons Routing
 # ─────────────────────────────
@@ -203,6 +245,9 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await filter_list(fake, context)
     elif query.data == "filterwizard":
         await filter_wizard_entry(fake, context)
+    elif query.data == "deletefilter":
+        await delete_filter_entry(fake, context)
+
 
 # ─────────────────────────────
 # Broadcast CVEs
@@ -258,7 +303,21 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+    
+    # Delete filter wizard
+    del_filter_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("deletefilter", delete_filter_entry),
+            CallbackQueryHandler(receive_delete_type, pattern="^(vendor|keyword|cwe)$")
+        ],
+        states={
+            DELETE_FILTER_TYPE: [CallbackQueryHandler(receive_delete_type)],
+            DELETE_FILTER_VALUE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_delete_value)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
 
+    app.add_handler(del_filter_handler)
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(handle_buttons))
 
