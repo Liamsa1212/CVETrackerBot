@@ -1,10 +1,28 @@
-"""Inline keyboards and menus for Telegram Bot."""
+"""Inline keyboards and persistent menus for Telegram Bot."""
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
+
+
+def get_persistent_reply_keyboard() -> ReplyKeyboardMarkup:
+    """Always-visible bottom menu keyboard attached to chat input."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton("🔍 Latest CVEs"), KeyboardButton("🔥 CISA 0-Days")],
+            [KeyboardButton("🔔 Subscribe"), KeyboardButton("🔕 Unsubscribe")],
+            [KeyboardButton("⚙️ My Filters"), KeyboardButton("❓ Help")],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 
 def get_main_menu() -> InlineKeyboardMarkup:
-    """Main navigation menu keyboard."""
+    """Main navigation inline menu keyboard."""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔍 Latest CVEs", callback_data="nav_latest"),

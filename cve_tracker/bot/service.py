@@ -3,12 +3,15 @@
 import asyncio
 from typing import Optional
 from loguru import logger
+from telegram import BotCommand
 from telegram.ext import (
     Application,
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    MessageHandler,
+    filters,
 )
 
 from cve_tracker.bot.handlers import (
@@ -17,6 +20,7 @@ from cve_tracker.bot.handlers import (
     clear_filters_command,
     filters_command,
     handle_callback_navigation,
+    handle_text_menu_buttons,
     help_command,
     latest_command,
     set_min_score_command,
@@ -48,6 +52,24 @@ async def scheduled_poll_job(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"Error during scheduled poll job: {e}")
 
 
+async def post_init_setup(application: Application) -> None:
+    """Set persistent bot command menu visible in Telegram's [/] menu button."""
+    try:
+        commands = [
+            BotCommand("start", "🏠 Open Main Menu & Dashboard"),
+            BotCommand("latest", "🔍 View Latest 5 CVEs"),
+            BotCommand("cisa", "🔥 View Actively Exploited 0-Days"),
+            BotCommand("subscribe", "🔔 Subscribe to Real-time Alerts"),
+            BotCommand("unsubscribe", "🔕 Stop Automated Alerts"),
+            BotCommand("filters", "⚙️ Configure Alert Filters"),
+            BotCommand("help", "❓ Help & Command List"),
+        ]
+        await application.bot.set_my_commands(commands)
+        logger.info("Registered persistent bot commands in Telegram Menu.")
+    except Exception as e:
+        logger.warning(f"Could not register Telegram bot commands: {e}")
+
+
 def build_telegram_bot_app(
     settings: Settings,
     repository: CVERepository,
@@ -59,7 +81,12 @@ def build_telegram_bot_app(
         logger.warning("Telegram bot token not provided. Telegram bot will not be started.")
         return None
 
-    app = ApplicationBuilder().token(settings.telegram_bot_token).build()
+    app = (
+        ApplicationBuilder()
+        .token(settings.telegram_bot_token)
+        .post_init(post_init_setup)
+        .build()
+    )
 
     # Register dependencies into bot_data for handlers
     app.bot_data["settings"] = settings
@@ -83,8 +110,11 @@ def build_telegram_bot_app(
     app.add_handler(CommandHandler("addfilter", add_filter_command))
     app.add_handler(CommandHandler("clearfilters", clear_filters_command))
 
-    # Callback Query handlers for navigation menus
+    # Callback Query handlers for inline navigation menus
     app.add_handler(CallbackQueryHandler(handle_callback_navigation))
+
+    # Text Message Handler for persistent bottom keyboard taps
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_menu_buttons))
 
     # Schedule recurring polling with PTB JobQueue
     if app.job_queue:
