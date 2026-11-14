@@ -19,3 +19,7 @@ class BaseNotifier(ABC):
         Send a vulnerability alert to the specified target.
         Returns True if delivered successfully, False otherwise.
         """
+
+    async def close(self) -> None:
+        """Release any network resources or sessions."""
+        pass

@@ -5,6 +5,7 @@ import httpx
 from loguru import logger
 
 from cve_tracker.core.rate_limiter import AsyncRateLimiter, execute_with_retry
+from cve_tracker.core.security import mask_sensitive_url, validate_outbound_url
 from cve_tracker.models.cve import CVEItem
 from cve_tracker.models.subscriber import ChannelType
 from cve_tracker.notifiers.base import BaseNotifier
@@ -29,9 +30,16 @@ class GenericWebhookNotifier(BaseNotifier):
             self._client = httpx.AsyncClient(timeout=15.0)
         return self._client
 
+    async def close(self) -> None:
+        """Close HTTP client session."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+
     async def send_alert(self, target_id: str, cve: CVEItem) -> bool:
-        if not target_id.startswith("http"):
-            logger.warning(f"Invalid webhook URL: {target_id}")
+        try:
+            validated_url = validate_outbound_url(target_id)
+        except Exception as err:
+            logger.warning(f"Blocked webhook dispatch to {mask_sensitive_url(target_id)}: {err}")
             return False
 
         client = await self.get_client()
@@ -42,7 +50,7 @@ class GenericWebhookNotifier(BaseNotifier):
 
         async def _do_send():
             await self.rate_limiter.acquire()
-            resp = await client.post(target_id, json=payload)
+            resp = await client.post(validated_url, json=payload)
             resp.raise_for_status()
             return resp
 
@@ -50,5 +58,5 @@ class GenericWebhookNotifier(BaseNotifier):
             await execute_with_retry(_do_send, max_retries=3, operation_name="Generic Webhook")
             return True
         except Exception as e:
-            logger.error(f"Failed to post to generic webhook {target_id}: {e}")
+            logger.error(f"Failed to post to generic webhook {mask_sensitive_url(target_id)}: {e}")
             return False

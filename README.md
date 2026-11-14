@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/pydantic-v2.x-green?logo=pydantic" alt="Pydantic v2">
   <img src="https://img.shields.io/badge/asyncio-httpx%20%2B%20aiosqlite-purple" alt="Async Engine">
   <img src="https://img.shields.io/badge/docker-multi--stage-2496ED?logo=docker" alt="Docker Ready">
-  <img src="https://img.shields.io/badge/tests-35%20passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-61%20passed-brightgreen" alt="Tests">
 </p>
 
 ---

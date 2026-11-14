@@ -42,33 +42,45 @@ class WatchlistParser:
                     deps = data.get(dep_section, {})
                     if isinstance(deps, dict):
                         for pkg in deps.keys():
+                            if not isinstance(pkg, str):
+                                continue
                             clean_pkg = pkg.lower().strip()
-                            # Handle scoped packages e.g. @angular/core -> angular, core
+                            if not clean_pkg:
+                                continue
+                            # Handle scoped packages e.g. @angular/core -> @angular/core, angular/core, core
                             if clean_pkg.startswith("@") and "/" in clean_pkg:
+                                packages.add(clean_pkg)
                                 parts = clean_pkg[1:].split("/")
-                                packages.add(parts[0])
-                                packages.add(parts[1])
+                                if len(parts) >= 2 and parts[1]:
+                                    packages.add(parts[1])
                             else:
                                 packages.add(clean_pkg)
-        except json.JSONDecodeError as e:
+        except Exception as e:
             logger.warning(f"Failed to parse package.json: {e}")
 
-        return sorted(list(packages))
+        # Ensure safe package name format
+        valid_packages = [
+            p for p in packages
+            if p and len(p) <= 64 and re.match(r"^[@a-zA-Z0-9_\-\.\/]+$", p)
+        ]
+        return sorted(list(set(valid_packages)))
 
     @classmethod
     def parse_manifest(cls, filename: str, content: str) -> List[str]:
         """Detect and parse dependency file based on filename."""
         fn_lower = filename.lower()
         if "package.json" in fn_lower:
-            return cls.parse_package_json(content)
-        elif "requirements" in fn_lower or fn_lower.endswith(".txt"):
-            return cls.parse_requirements_txt(content)
-        elif fn_lower.endswith(".json"):
-            # Try parsing as package.json first
             parsed = cls.parse_package_json(content)
             if parsed:
                 return parsed
-        # Fallback to lines
+        if "requirements" in fn_lower or fn_lower.endswith(".txt"):
+            parsed = cls.parse_requirements_txt(content)
+            if parsed:
+                return parsed
+        # Fallback to try both parsers
+        parsed_json = cls.parse_package_json(content)
+        if parsed_json:
+            return parsed_json
         return cls.parse_requirements_txt(content)
 
     @staticmethod

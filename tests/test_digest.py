@@ -20,7 +20,7 @@ async def test_compile_morning_digest(
     digest = await compiler.compile_morning_digest(hours=24)
 
     assert digest is not None
-    assert "Daily Threat Intelligence Briefing" in digest
-    assert "24-Hour Threat Statistics" in digest
+    assert "EXECUTIVE THREAT INTELLIGENCE BRIEFING" in digest
+    assert "SURFACE TELEMETRY" in digest
     assert sample_cve.id in digest
     assert sample_cisa_cve.id in digest

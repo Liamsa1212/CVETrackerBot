@@ -1,5 +1,6 @@
 """Subscription filter criteria model with evaluation logic."""
 
+import re
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from cve_tracker.models.cve import CVEItem, Severity
@@ -77,14 +78,27 @@ class SubscriptionFilter(BaseModel):
             if not any(p.lower() in search_corpus for p in self.products):
                 return False
 
-        # Keyword matching
+        # Keyword matching (use word-boundary matching for short tokens like 'rce', 'dos')
         if self.keywords:
-            if not any(k.lower() in search_corpus for k in self.keywords):
+            matched = False
+            for k in self.keywords:
+                k_clean = k.strip().lower()
+                if not k_clean:
+                    continue
+                if len(k_clean) <= 4:
+                    if re.search(rf"\b{re.escape(k_clean)}\b", search_corpus):
+                        matched = True
+                        break
+                elif k_clean in search_corpus:
+                    matched = True
+                    break
+            if not matched:
                 return False
 
-        # Watchlist matching (direct asset tracking)
+        # Watchlist matching (direct asset tracking, skip empty strings)
         if self.watchlist:
-            if not any(item.lower() in search_corpus for item in self.watchlist):
+            valid_items = [item.strip().lower() for item in self.watchlist if item.strip()]
+            if valid_items and not any(item in search_corpus for item in valid_items):
                 return False
 
         return True

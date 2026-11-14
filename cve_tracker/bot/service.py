@@ -18,10 +18,12 @@ from telegram.ext import (
 
 from cve_tracker.bot.handlers import (
     add_filter_command,
+    audit_command,
     cisa_command,
     clear_filters_command,
     cve_lookup_command,
     digest_command,
+    export_command,
     filters_command,
     handle_callback_navigation,
     handle_document_upload,
@@ -89,15 +91,17 @@ async def post_init_setup(application: Application) -> None:
     """Set persistent bot command menu visible in Telegram's [/] menu button."""
     try:
         commands = [
-            BotCommand("start", "🏠 Open Main Menu & Dashboard"),
-            BotCommand("latest", "🔍 View Latest 5 CVEs"),
-            BotCommand("cisa", "🔥 View Actively Exploited 0-Days"),
+            BotCommand("start", "🏠 Open Sentinel Console"),
+            BotCommand("latest", "🔍 View Latest Advisories"),
+            BotCommand("cisa", "🔥 Actively Exploited 0-Days"),
             BotCommand("cve", "🔎 Instant CVE Dossier (/cve ID)"),
-            BotCommand("watch", "📦 Manage Tech Stack Watchlist"),
-            BotCommand("digest", "☕ View 24h Threat Briefing"),
+            BotCommand("watch", "📦 Manage Tech Watchlist"),
+            BotCommand("audit", "🔬 Audit SBOM Dependency Security"),
+            BotCommand("export", "📥 Export STIX 2.1 Intel Bundle"),
+            BotCommand("digest", "📊 24h Threat Intel Briefing"),
             BotCommand("filters", "⚙️ Configure Alert Filters"),
             BotCommand("subscribe", "🔔 Subscribe to Real-time Alerts"),
-            BotCommand("help", "❓ Help & Command List"),
+            BotCommand("help", "❓ Command Reference"),
         ]
         await application.bot.set_my_commands(commands)
         logger.info("Registered persistent bot commands in Telegram Menu.")
@@ -143,6 +147,8 @@ def build_telegram_bot_app(
     app.add_handler(CommandHandler("cve", cve_lookup_command))
     app.add_handler(CommandHandler("watch", watchlist_command))
     app.add_handler(CommandHandler("watchlist", watchlist_command))
+    app.add_handler(CommandHandler("audit", audit_command))
+    app.add_handler(CommandHandler("export", export_command))
     app.add_handler(CommandHandler("digest", digest_command))
     app.add_handler(CommandHandler("filters", filters_command))
     app.add_handler(CommandHandler("setminscore", set_min_score_command))

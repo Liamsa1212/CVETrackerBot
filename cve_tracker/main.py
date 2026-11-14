@@ -104,8 +104,11 @@ async def async_main() -> None:
         await telegram_app.start()
         await telegram_app.updater.start_polling(drop_pending_updates=True)
 
-        # Run an initial vulnerability check in background
-        asyncio.create_task(fetcher_manager.poll_and_ingest())
+        # Run an initial vulnerability check in background with retained strong reference
+        background_tasks = set()
+        initial_poll_task = asyncio.create_task(fetcher_manager.poll_and_ingest())
+        background_tasks.add(initial_poll_task)
+        initial_poll_task.add_done_callback(background_tasks.discard)
 
         # Keep running until cancelled
         stop_event = asyncio.Event()
@@ -119,11 +122,13 @@ async def async_main() -> None:
             try:
                 loop.add_signal_handler(sig, _signal_handler)
             except NotImplementedError:
-                # Windows event loop doesn't always support add_signal_handler
+                # Windows ProactorEventLoop doesn't support add_signal_handler
                 pass
 
         try:
-            await stop_event.wait()
+            # Interruptible poll loop for cross-platform graceful shutdown
+            while not stop_event.is_set():
+                await asyncio.sleep(0.5)
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
@@ -131,6 +136,7 @@ async def async_main() -> None:
             await telegram_app.updater.stop()
             await telegram_app.stop()
             await telegram_app.shutdown()
+            await dispatcher.close()
             await fetcher_manager.close()
             await engine.dispose()
     else:

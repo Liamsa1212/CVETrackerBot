@@ -82,15 +82,44 @@ class FetcherManager:
 
         logger.info(f"Persisting {len(all_cves)} enriched CVEs to database...")
 
-        newly_updated_cves: List[CVEItem] = []
-        seen_ids = set()
-
+        # Merge multiple records for identical CVE ID across feeds (NVD + CISA + GHSA)
+        merged_cves: Dict[str, CVEItem] = {}
         for cve in all_cves:
-            # Deduplicate items in the same batch
-            if cve.id in seen_ids:
-                continue
-            seen_ids.add(cve.id)
+            if cve.id not in merged_cves:
+                merged_cves[cve.id] = cve
+            else:
+                existing = merged_cves[cve.id]
+                # Merge KEV flags
+                if cve.is_cisa_kev:
+                    existing.is_cisa_kev = True
+                    if cve.cisa_action_due:
+                        existing.cisa_action_due = cve.cisa_action_due
+                # Merge CVSS data
+                if not existing.cvss and cve.cvss:
+                    existing.cvss = cve.cvss
+                elif existing.cvss and cve.cvss and (cve.cvss.score or 0) > (existing.cvss.score or 0):
+                    existing.cvss = cve.cvss
+                # Merge CWEs
+                if cve.cwes:
+                    existing.cwes = sorted(list(set(existing.cwes + cve.cwes)))
+                # Merge vendors and products
+                if cve.affected_vendors:
+                    existing.affected_vendors = sorted(list(set(existing.affected_vendors + cve.affected_vendors)))
+                if cve.affected_products:
+                    existing.affected_products = sorted(list(set(existing.affected_products + cve.affected_products)))
+                # Merge references
+                existing_urls = {r.url for r in existing.references}
+                for ref in cve.references:
+                    if ref.url not in existing_urls:
+                        existing.references.append(ref)
+                        existing_urls.add(ref.url)
+                # Merge EPSS
+                if existing.epss_score is None and cve.epss_score is not None:
+                    existing.epss_score = cve.epss_score
+                    existing.epss_percentile = cve.epss_percentile
 
+        newly_updated_cves: List[CVEItem] = []
+        for cve in merged_cves.values():
             try:
                 saved_item, is_new = await self.repository.upsert_cve(cve)
                 if is_new:

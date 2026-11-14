@@ -57,38 +57,43 @@ class DailyDigestCompiler:
         )
 
         lines = [
-            "☕ <b>Daily Threat Intelligence Briefing</b>",
-            f"📅 <code>{datetime.now(timezone.utc).strftime('%A, %B %d, %Y')}</code>\n",
-            "📊 <b>24-Hour Threat Statistics:</b>",
-            f"• <b>Total Discovered:</b> {total_count}",
-            f"• <b>🔴 Critical Severity:</b> {len(critical_cves)}",
-            f"• <b>🔥 CISA Actively Exploited:</b> {len(cisa_cves)}",
-            f"• <b>🧪 Public PoC Available:</b> {len(poc_cves)}\n",
+            "<b>EXECUTIVE THREAT INTELLIGENCE BRIEFING</b>",
+            f"<b>Period:</b> <code>{cutoff.strftime('%Y-%m-%d %H:%M')} UTC</code> to <code>{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC</code>",
+            "<b>Classification:</b> TLP:CLEAR // AUTOMATED DISPATCH\n",
+            "<b>SURFACE TELEMETRY</b>",
+            f"• Total Analyzed: <code>{total_count}</code> | Critical (9.0+): <code>{len(critical_cves)}</code>",
+            f"• CISA KEV Additions: <code>{len(cisa_cves)}</code> | Weaponized PoCs: <code>{len(poc_cves)}</code>",
         ]
 
-        # 1. CISA KEV highlights
+        if epss_cves and epss_cves[0].epss_score:
+            lines.append(f"• Peak EPSS Weaponization Risk: <code>{epss_cves[0].epss_score * 100:.1f}%</code>\n")
+        else:
+            lines.append("")
+
+        # 1. CISA KEV urgent actions
         if cisa_cves:
-            lines.append("🔥 <b>Active 0-Day / KEV Additions:</b>")
+            lines.append("<b>URGENT REMEDIATION ACTIONS (CISA KEV)</b>")
             for c in cisa_cves[:3]:
-                due_info = f" (Due: {c.cisa_action_due.strftime('%Y-%m-%d')})" if c.cisa_action_due else ""
-                lines.append(f"• <b>{c.id}</b>: {html.escape(c.title or c.description[:80])}{due_info}")
+                due_info = f" [Remediation Due: <b>{c.cisa_action_due.strftime('%Y-%m-%d')}</b>]" if c.cisa_action_due else ""
+                lines.append(f"• <code>{c.id}</code>: {html.escape(c.title or c.description[:80])}{due_info}")
             lines.append("")
 
         # 2. Top Criticals
         if critical_cves:
-            lines.append("🔴 <b>Top Critical Vulnerabilities:</b>")
+            lines.append("<b>TOP CRITICAL VULNERABILITIES</b>")
             for c in critical_cves[:3]:
                 score_str = f"CVSS {c.cvss.score:.1f}" if c.cvss and c.cvss.score else "Critical"
-                lines.append(f"• <b>{c.id}</b> [{score_str}] — {html.escape(c.description[:100])}...")
+                lines.append(f"• <code>{c.id}</code> (<code>{score_str}</code>) — {html.escape(c.description[:100])}...")
             lines.append("")
 
         # 3. High EPSS exploitation risk
-        if epss_cves and epss_cves[0].epss_score and epss_cves[0].epss_score >= 0.20:
-            lines.append("📈 <b>Highest Exploit Probability (EPSS):</b>")
+        if epss_cves and epss_cves[0].epss_score and epss_cves[0].epss_score >= 0.15:
+            lines.append("<b>EXPLOITATION PROBABILITY SURGES (EPSS)</b>")
             for c in epss_cves[:3]:
                 prob = f"{c.epss_score * 100:.1f}%" if c.epss_score else "N/A"
-                lines.append(f"• <b>{c.id}</b>: <code>{prob}</code> probability of weaponization")
+                pct_str = f" ({c.epss_percentile * 100:.0f}th percentile)" if c.epss_percentile else ""
+                lines.append(f"• <code>{c.id}</code>: <code>{prob}</code>{pct_str} weaponization likelihood")
             lines.append("")
 
-        lines.append("💡 <i>Tip: Send any CVE ID or use /cve &lt;ID&gt; for an instant threat dossier.</i>")
+        lines.append("<i>Run /cve &lt;ID&gt; for full intelligence dossier and mitigation analysis.</i>")
         return "\n".join(lines)

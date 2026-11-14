@@ -29,22 +29,25 @@ class AsyncRateLimiter:
 
     async def acquire(self, tokens: float = 1.0) -> None:
         """Wait until sufficient tokens are available and consume them."""
-        while True:
-            async with self._lock:
-                now = time.monotonic()
-                elapsed = now - self.updated_at
-                self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
-                self.updated_at = now
+        if tokens > self.capacity:
+            raise ValueError(f"Requested tokens ({tokens}) cannot exceed bucket capacity ({self.capacity}).")
 
-                if self.tokens >= tokens:
-                    self.tokens -= tokens
-                    return
+        wait_time = 0.0
+        async with self._lock:
+            now = time.monotonic()
+            elapsed = now - self.updated_at
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+            self.updated_at = now
 
-                # Calculate wait duration until enough tokens will be refilled
+            if self.tokens < tokens:
                 deficit = tokens - self.tokens
                 wait_time = deficit / self.rate
+                # Reserve tokens into negative balance so waiters queue behind
+                self.tokens -= tokens
+            else:
+                self.tokens -= tokens
 
-            # Sleep outside lock to avoid blocking other concurrent acquirers
+        if wait_time > 0:
             await asyncio.sleep(wait_time)
 
 

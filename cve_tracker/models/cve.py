@@ -53,18 +53,21 @@ class Reference(BaseModel):
     @property
     def is_exploit(self) -> bool:
         lower_url = self.url.lower()
-        exploit_markers = [
-            "github.com",
+        exploit_domains = [
             "exploit-db.com",
             "packetstormsecurity.com",
             "cxsecurity.com",
             "0day.today",
             "sploitus.com",
+            "seclists.org/fulldisclosure",
         ]
         tag_markers = ["exploit", "proof of concept", "technical description"]
         matches_tag = any(m in tag.lower() for tag in self.tags for m in tag_markers)
-        matches_url = any(marker in lower_url for marker in exploit_markers)
-        return matches_tag or matches_url
+        matches_domain = any(marker in lower_url for marker in exploit_domains)
+        matches_github_poc = "github.com" in lower_url and any(
+            k in lower_url for k in ("/poc", "-poc", "poc-", "/exploit", "-exploit", "cve-")
+        )
+        return matches_tag or matches_domain or matches_github_poc
 
 
 class CVEItem(BaseModel):
@@ -72,7 +75,7 @@ class CVEItem(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    id: str = Field(..., pattern=r"^(CVE-\d{4}-\d{4,}|GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})$")
+    id: str = Field(..., pattern=r"^(CVE-\d{4}-\d{4,}|GHSA-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4})$")
     source: SourceType
     description: str
     title: Optional[str] = None
@@ -104,6 +107,20 @@ class CVEItem(BaseModel):
     @computed_field
     @property
     def content_hash(self) -> str:
-        """SHA-256 hash used to track state changes and avoid duplicate alerting."""
-        raw = f"{self.id}|{self.cvss.score if self.cvss else ''}|{self.epss_score or ''}|{self.description[:200]}|{self.is_cisa_kev}"
+        """SHA-256 hash representing meaningful vulnerability updates.
+        
+        Quantizes EPSS score into discrete risk bands to prevent daily micro-decimal
+        fluctuations from triggering duplicate notification loops.
+        """
+        epss_band = 0
+        if self.epss_score is not None:
+            if self.epss_score >= 0.50:
+                epss_band = 3
+            elif self.epss_score >= 0.25:
+                epss_band = 2
+            elif self.epss_score >= 0.10:
+                epss_band = 1
+
+        cvss_str = f"{self.cvss.score:.1f}" if self.cvss and self.cvss.score is not None else ""
+        raw = f"{self.id}|{cvss_str}|{self.severity.value}|{epss_band}|{self.is_cisa_kev}|{self.description[:150]}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()

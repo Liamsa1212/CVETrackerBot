@@ -170,6 +170,26 @@ class CVERepository:
             records = res.scalars().all()
             return [self._record_to_cve_item(r) for r in records]
 
+    async def get_cves_by_product(self, product_name: str, limit: int = 5) -> List[CVEItem]:
+        """Find CVEs affecting a given product or component name."""
+        clean_name = product_name.strip().lower()
+        if not clean_name:
+            return []
+        async with self.session_factory() as session:
+            pattern = f"%{clean_name}%"
+            stmt = (
+                select(CVERecord)
+                .where(
+                    (CVERecord.products_json.like(pattern))
+                    | (CVERecord.description.like(pattern))
+                )
+                .order_by(desc(CVERecord.cvss_score))
+                .limit(limit)
+            )
+            res = await session.execute(stmt)
+            records = res.scalars().all()
+            return [self._record_to_cve_item(r) for r in records]
+
     async def get_subscriber(
         self, target_id: str, channel_type: ChannelType
     ) -> Optional[SubscriberTarget]:

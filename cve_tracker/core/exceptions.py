@@ -9,6 +9,10 @@ class ConfigurationError(CVETrackerError):
     """Raised when configuration validation or environment loading fails."""
 
 
+class ValidationError(CVETrackerError):
+    """Raised when user input, URL, or data validation fails."""
+
+
 class FetcherError(CVETrackerError):
     """Raised when an external CVE source request fails permanently."""
 

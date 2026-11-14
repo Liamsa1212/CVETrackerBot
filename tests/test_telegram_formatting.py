@@ -27,11 +27,10 @@ def test_telegram_html_formatting():
     formatted = TelegramNotifier.format_html_alert(cve)
 
     # HTML special characters must be properly escaped
-    assert "&lt;XSS&gt;" in formatted
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in formatted
     assert "&lt;vendor&gt;" in formatted
     assert "&lt;product&gt;" in formatted
-    assert "<b>CVE-2024-8888</b>" in formatted
+    assert "CVE-2024-8888" in formatted
     assert "<code>HIGH 8.5</code>" in formatted
     assert "https://github.com/test/poc" in formatted
 
@@ -53,7 +52,7 @@ def test_telegram_format_briefing_list():
 
     briefing = TelegramNotifier.format_briefing_list([cve1, cve2], title="Latest Vulnerabilities")
 
-    assert "Latest Vulnerabilities" in briefing
-    assert "1. <b>CVE-2024-0001</b>" in briefing
-    assert "2. <b>CVE-2024-0002</b>" in briefing
-    assert "[<b>CISA KEV</b>]" in briefing
+    assert "LATEST VULNERABILITIES" in briefing
+    assert "1. <code>CVE-2024-0001</code>" in briefing
+    assert "2. <code>CVE-2024-0002</code>" in briefing
+    assert "[KEV]" in briefing

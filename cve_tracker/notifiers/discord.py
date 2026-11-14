@@ -5,6 +5,7 @@ import httpx
 from loguru import logger
 
 from cve_tracker.core.rate_limiter import AsyncRateLimiter, execute_with_retry
+from cve_tracker.core.security import mask_sensitive_url, validate_outbound_url
 from cve_tracker.models.cve import CVEItem, Severity
 from cve_tracker.models.subscriber import ChannelType
 from cve_tracker.notifiers.base import BaseNotifier
@@ -28,6 +29,11 @@ class DiscordNotifier(BaseNotifier):
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(timeout=15.0)
         return self._client
+
+    async def close(self) -> None:
+        """Close HTTP client session."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
 
     @staticmethod
     def _get_color_for_severity(severity: Severity) -> int:
@@ -78,8 +84,10 @@ class DiscordNotifier(BaseNotifier):
 
     async def send_alert(self, target_id: str, cve: CVEItem) -> bool:
         """Send message payload to Discord webhook URL."""
-        if not target_id.startswith("http"):
-            logger.warning(f"Invalid Discord webhook URL: {target_id}")
+        try:
+            validated_url = validate_outbound_url(target_id)
+        except Exception as err:
+            logger.warning(f"Blocked Discord dispatch to {mask_sensitive_url(target_id)}: {err}")
             return False
 
         client = await self.get_client()
@@ -87,7 +95,7 @@ class DiscordNotifier(BaseNotifier):
 
         async def _do_send():
             await self.rate_limiter.acquire()
-            resp = await client.post(target_id, json=payload)
+            resp = await client.post(validated_url, json=payload)
             resp.raise_for_status()
             return resp
 
@@ -95,5 +103,5 @@ class DiscordNotifier(BaseNotifier):
             await execute_with_retry(_do_send, max_retries=3, operation_name="Discord Webhook")
             return True
         except Exception as e:
-            logger.error(f"Failed to post to Discord webhook: {e}")
+            logger.error(f"Failed to post to Discord webhook {mask_sensitive_url(target_id)}: {e}")
             return False

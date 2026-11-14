@@ -176,12 +176,12 @@ class NVDFetcher(BaseCVEFetcher):
         if since is None:
             since = now - timedelta(hours=24)
 
-        # NVD requires ISO format e.g. 2026-11-14T10:00:00.000
+        # Query by last modified date to capture both new CVEs and updated scores/CPEs
         params: Dict[str, Any] = {
             "resultsPerPage": min(limit, 100),
             "startIndex": 0,
-            "pubStartDate": since.strftime("%Y-%m-%dT%H:%M:%S.000"),
-            "pubEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000"),
+            "lastModStartDate": since.strftime("%Y-%m-%dT%H:%M:%S.000"),
+            "lastModEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000"),
         }
 
         async def _do_request() -> httpx.Response:

@@ -5,7 +5,7 @@ import io
 import re
 from typing import Optional
 from loguru import logger
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     CallbackQueryHandler,
@@ -24,9 +24,12 @@ from cve_tracker.bot.keyboards import (
 from cve_tracker.models.filter import SubscriptionFilter
 from cve_tracker.models.subscriber import ChannelType
 from cve_tracker.notifiers.telegram import TelegramNotifier
+from cve_tracker.services.audit import ManifestAuditService
 from cve_tracker.services.digest import DailyDigestCompiler
 from cve_tracker.services.dossier import CVEDossierService
 from cve_tracker.services.explainer import ThreatExplainerService
+from cve_tracker.services.mitre import MitreAttackService
+from cve_tracker.services.stix_exporter import STIX21Exporter
 from cve_tracker.services.watchlist import WatchlistParser
 from cve_tracker.storage.repository import CVERepository
 
@@ -67,13 +70,29 @@ def format_filters_summary(f: SubscriptionFilter) -> str:
     return "\n".join(lines)
 
 
+MAX_MANIFEST_SIZE_BYTES = 512 * 1024  # 512 KB
+MAX_WATCHLIST_ITEMS = 100
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /start command."""
+    """Handle /start command with a unified, executive sentinel dashboard."""
     welcome_text = (
-        "🛡️ <b>Welcome to CVE Tracker Bot v2.1</b>\n\n"
-        "Your automated vulnerability intelligence sentinel.\n"
-        "Tracking <b>NIST NVD</b>, <b>CISA KEV</b>, and <b>GitHub Security Advisories</b> in real time.\n\n"
-        "Use the persistent menu buttons below or the inline dashboard to navigate:"
+        "<b>SENTINEL ACTIVE // CVE TRACKER BOT v2.1</b>\n"
+        "<b>Classification:</b> TLP:CLEAR // SOC OPERATIONAL CONSOLE\n\n"
+        "<b>INTELLIGENCE FEEDS MONITORED</b>\n"
+        "• <b>NIST NVD API 2.0:</b> Real-time ingestion with CVSS v4/v3/v2 scoring\n"
+        "• <b>CISA KEV Catalog:</b> Actively weaponized 0-days in the wild\n"
+        "• <b>GitHub Advisories:</b> Ecosystem dependencies (npm, PyPI, Go, Cargo)\n"
+        "• <b>FIRST.org EPSS:</b> Predictive exploitation probability modeling\n\n"
+        "<b>COMMAND SHORTCUTS</b>\n"
+        "• <code>/latest</code> — 5 most recent high-signal advisories\n"
+        "• <code>/cisa</code> — Active 0-days under federal remediation mandates\n"
+        "• <code>/cve &lt;ID&gt;</code> — Full intelligence dossier, ATT&CK mapping & STIX export\n"
+        "• <code>/watch</code> — Software watchlist inventory & real-time matching\n"
+        "• <code>/audit</code> — Instant SBOM security posture evaluation (Grade A–F)\n"
+        "• <code>/digest</code> — 24-hour executive morning threat intelligence briefing\n"
+        "• <code>/filters</code> — Fine-tune CVSS, EPSS, and vendor notification rules\n\n"
+        "<i>Use the persistent navigation console below to begin:</i>"
     )
     if update.effective_message:
         await update.effective_message.reply_text(
@@ -81,31 +100,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             parse_mode=ParseMode.HTML,
             reply_markup=get_persistent_reply_keyboard(),
         )
-        await update.effective_message.reply_text(
-            "👇 <b>Quick Action Dashboard:</b>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_main_menu(),
-        )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /help command."""
     help_text = (
-        "📖 <b>CVE Tracker Bot Help:</b>\n\n"
-        "Use the persistent buttons at the bottom of your screen anytime.\n\n"
-        "<b>Available features:</b>\n"
-        "• 🔍 <b>Latest CVEs</b> — View the 5 most recent vulnerabilities\n"
-        "• 🔥 <b>CISA 0-Days</b> — View actively exploited CVEs (CISA KEV catalog)\n"
-        "• 📦 <b>My Watchlist</b> — Monitor your specific tech stack or dependencies\n"
-        "• ☕ <b>Threat Digest</b> — 24-hour executive morning briefing\n"
-        "• 🔔 <b>Subscribe</b> — Receive real-time alerts automatically\n"
-        "• 🔕 <b>Unsubscribe</b> — Pause automated alerts\n"
-        "• ⚙️ <b>My Filters</b> — Configure alert thresholds and rules\n\n"
-        "<b>Commands & Shortcuts:</b>\n"
-        "• <code>/cve CVE-YYYY-NNNN</code> — Instant vulnerability dossier & exploit status\n"
-        "• <code>/watch nginx, redis, postgresql</code> — Add software to watchlist\n"
-        "• <i>Tip: Drag and drop any requirements.txt or package.json into this chat!</i>\n"
-        "• <code>/setminscore &lt;score&gt;</code> — Set minimum CVSS (e.g. <code>/setminscore 7.5</code>)\n"
+        "<b>SENTINEL COMMAND REFERENCE // CVE TRACKER BOT</b>\n\n"
+        "<b>THREAT DISCOVERY & INVESTIGATION</b>\n"
+        "• <code>/latest</code> — Dense columnar list of recent vulnerabilities\n"
+        "• <code>/cisa</code> — Active CISA KEV entries with remediation countdowns\n"
+        "• <code>/cve CVE-YYYY-NNNN</code> — Technical dossier, PoC status & ATT&CK mapping\n"
+        "• <code>/digest</code> — 24-hour executive threat intelligence summary\n\n"
+        "<b>SUPPLY CHAIN & ASSET INVENTORY</b>\n"
+        "• <code>/watch [pkg1, pkg2]</code> — Monitor specific software or packages\n"
+        "• <code>/audit</code> — Instant SBOM security posture check (Grade A–F)\n"
+        "• <i>Tip: Drag and drop requirements.txt or package.json into this chat!</i>\n\n"
+        "<b>SUBSCRIPTIONS & ALERT FILTERING</b>\n"
+        "• <code>/subscribe</code> — Activate automated push notifications\n"
+        "• <code>/unsubscribe</code> — Pause automated alerts\n"
+        "• <code>/filters</code> — Interactive filter wizard (CVSS, EPSS, Vendors)\n"
+        "• <code>/setminscore &lt;score&gt;</code> — Set minimum CVSS threshold (e.g. 7.5)\n"
         "• <code>/clearfilters</code> — Reset all filters to default\n"
     )
     if update.effective_message:
@@ -117,47 +131,66 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cve_lookup_command(update: Update, context: ContextTypes.DEFAULT_TYPE, cve_id_override: Optional[str] = None) -> None:
-    """Handle /cve <ID> or on-demand CVE lookups."""
+    """Zero-leak in-place CVE Dossier lookup."""
     cve_id = cve_id_override
     if not cve_id and context.args:
         cve_id = context.args[0]
 
     if not cve_id:
         if update.effective_message:
-            await update.effective_message.reply_text("Usage: <code>/cve CVE-2024-3400</code>", parse_mode=ParseMode.HTML)
+            await update.effective_message.reply_text(
+                "<b>Usage:</b> <code>/cve CVE-2024-3400</code>",
+                parse_mode=ParseMode.HTML,
+            )
         return
 
     cve_id = cve_id.strip().upper()
     if not re.match(r"^CVE-\d{4}-\d{4,}$", cve_id):
         if update.effective_message:
-            await update.effective_message.reply_text("❌ Please enter a valid CVE ID format (e.g. <code>CVE-2024-3400</code>).", parse_mode=ParseMode.HTML)
+            await update.effective_message.reply_text(
+                "<b>Error:</b> Invalid CVE ID format (expected <code>CVE-YYYY-NNNN</code>).",
+                parse_mode=ParseMode.HTML,
+            )
         return
 
+    # Single editable status message preventing chat clutter
+    status_msg = None
     if update.effective_message:
-        await update.effective_message.reply_text(f"🔍 <i>Querying intelligence dossier for {cve_id}...</i>", parse_mode=ParseMode.HTML)
+        status_msg = await update.effective_message.reply_text(
+            f"<code>QUERY // Fetching dossier for {cve_id}...</code>",
+            parse_mode=ParseMode.HTML,
+        )
 
     dossier_svc = _get_dossier_service(context)
     cve = await dossier_svc.get_cve_dossier(cve_id)
 
     if not cve:
-        if update.effective_message:
-            await update.effective_message.reply_text(f"❌ Could not find vulnerability records for <b>{cve_id}</b>.", parse_mode=ParseMode.HTML)
+        err_msg = f"<b>Error:</b> No intelligence records found for <code>{html.escape(cve_id)}</code>."
+        if status_msg:
+            await status_msg.edit_text(err_msg, parse_mode=ParseMode.HTML)
+        elif update.effective_message:
+            await update.effective_message.reply_text(err_msg, parse_mode=ParseMode.HTML)
         return
 
     html_msg = TelegramNotifier.format_html_alert(cve)
     markup = CVEDossierService.get_dossier_markup(cve.id)
 
-    if update.effective_message:
+    if status_msg:
+        await status_msg.edit_text(
+            html_msg,
+            parse_mode=ParseMode.HTML,
+            reply_markup=markup,
+        )
+    elif update.effective_message:
         await update.effective_message.reply_text(
             html_msg,
             parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
             reply_markup=markup,
         )
 
 
 async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /watch or watchlist management."""
+    """Handle /watch or watchlist management with capped bounds and clean escaping."""
     chat_id = str(update.effective_chat.id)
     repo = _get_repo(context)
     sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
@@ -167,24 +200,37 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         raw_text = " ".join(context.args)
         new_items = WatchlistParser.parse_comma_separated(raw_text)
         if new_items:
-            filt.watchlist = sorted(list(set(filt.watchlist + new_items)))
+            combined = sorted(list(set(filt.watchlist + new_items)))
+            if len(combined) > MAX_WATCHLIST_ITEMS:
+                if update.effective_message:
+                    await update.effective_message.reply_text(
+                        f"⚠️ Watchlist capacity limit reached ({MAX_WATCHLIST_ITEMS} items maximum).",
+                        parse_mode=ParseMode.HTML,
+                    )
+                return
+
+            filt.watchlist = combined
             await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, filt)
-            msg = f"✅ Added {len(new_items)} components to your watchlist: {', '.join(f'<code>{i}</code>' for i in new_items)}"
+            escaped_items = ", ".join(f"<code>{html.escape(i)}</code>" for i in new_items[:10])
+            msg = f"✅ Added {len(new_items)} components to watchlist: {escaped_items}"
             if update.effective_message:
                 await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
             return
 
     # Display watchlist summary
+    MAX_DISPLAY = 30
     if filt.watchlist:
-        wl_text = "\n".join(f"• <code>{html.escape(item)}</code>" for item in filt.watchlist)
-        body = f"📦 <b>Your Tech Stack Watchlist ({len(filt.watchlist)} items):</b>\n\n{wl_text}\n\n"
+        displayed = filt.watchlist[:MAX_DISPLAY]
+        wl_text = "\n".join(f"• <code>{html.escape(item)}</code>" for item in displayed)
+        overflow = f"\n<i>...and {len(filt.watchlist) - MAX_DISPLAY} more components</i>" if len(filt.watchlist) > MAX_DISPLAY else ""
+        body = f"<b>TECH STACK WATCHLIST ({len(filt.watchlist)} components):</b>\n\n{wl_text}{overflow}\n\n"
     else:
-        body = "📦 <b>Your Watchlist is empty.</b>\n\n"
+        body = "<b>TECH STACK WATCHLIST (0 components):</b>\n\n<i>No software components currently tracked.</i>\n\n"
 
     body += (
-        "💡 <b>How to add components:</b>\n"
-        "• Reply with software names: <code>/watch nginx, redis, docker</code>\n"
-        "• Or <b>drag and drop a requirements.txt / package.json</b> file into this chat to import dependencies automatically!"
+        "<b>USAGE INSTRUCTIONS:</b>\n"
+        "• Add components: <code>/watch nginx, redis, postgresql</code>\n"
+        "• Or <b>drag and drop a requirements.txt or package.json</b> file into this chat for an instant SBOM security audit!"
     )
 
     if update.effective_message:
@@ -192,18 +238,28 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def handle_document_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle uploaded requirements.txt or package.json files to build a watchlist."""
+    """Handle uploaded requirements.txt or package.json files for instant SBOM security audit."""
     if not update.effective_message or not update.effective_message.document:
         return
 
     doc = update.effective_message.document
-    filename = doc.file_name or "file.txt"
+    filename = doc.file_name or "manifest.txt"
+
+    # Enforce file size limit to prevent memory exhaustion
+    if doc.file_size and doc.file_size > MAX_MANIFEST_SIZE_BYTES:
+        await update.effective_message.reply_text(
+            f"❌ Manifest exceeds the 512 KB upload limit (file size: {doc.file_size // 1024} KB)."
+        )
+        return
 
     # Verify plausible manifest name
     if not (filename.endswith(".txt") or filename.endswith(".json") or "requirements" in filename.lower() or "package" in filename.lower()):
         return
 
-    await update.effective_message.reply_text(f"⏳ <i>Parsing dependency manifest '{html.escape(filename)}'...</i>", parse_mode=ParseMode.HTML)
+    status_msg = await update.effective_message.reply_text(
+        f"<code>AUDIT // Ingesting and evaluating '{html.escape(filename)}'...</code>",
+        parse_mode=ParseMode.HTML,
+    )
 
     try:
         tg_file = await doc.get_file()
@@ -212,7 +268,10 @@ async def handle_document_upload(update: Update, context: ContextTypes.DEFAULT_T
 
         packages = WatchlistParser.parse_manifest(filename, content)
         if not packages:
-            await update.effective_message.reply_text("⚠️ Could not detect valid package names in the uploaded document.")
+            await status_msg.edit_text(
+                "<b>Warning:</b> No valid software dependencies detected in the uploaded file.",
+                parse_mode=ParseMode.HTML,
+            )
             return
 
         chat_id = str(update.effective_chat.id)
@@ -220,18 +279,28 @@ async def handle_document_upload(update: Update, context: ContextTypes.DEFAULT_T
         sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
         filt = sub.filters if sub else SubscriptionFilter()
 
-        filt.watchlist = sorted(list(set(filt.watchlist + packages)))
+        # Update subscriber watchlist up to limit
+        combined = sorted(list(set(filt.watchlist + packages)))
+        if len(combined) > MAX_WATCHLIST_ITEMS:
+            combined = combined[:MAX_WATCHLIST_ITEMS]
+
+        filt.watchlist = combined
         await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, filt)
 
-        summary = f"🎉 <b>Successfully imported {len(packages)} packages into your Watchlist!</b>\n\n"
-        summary += f"Examples: {', '.join(f'<code>{p}</code>' for p in packages[:8])}..."
-        summary += "\nYou will now be alerted whenever a new CVE affects any of these dependencies!"
+        # Execute instant SBOM audit across vulnerability database
+        audit_svc = ManifestAuditService(repo)
+        report = await audit_svc.audit_dependencies(packages)
 
-        await update.effective_message.reply_text(summary, parse_mode=ParseMode.HTML)
+        audit_text = (
+            f"{report.summary_html}\n\n"
+            f"<i>Added {len(packages)} components to your active watchlist (total tracked: {len(filt.watchlist)}).</i>"
+        )
+
+        await status_msg.edit_text(audit_text, parse_mode=ParseMode.HTML)
 
     except Exception as e:
         logger.error(f"Error handling manifest upload: {e}")
-        await update.effective_message.reply_text("❌ Failed to process document. Ensure it is a valid UTF-8 text file.")
+        await status_msg.edit_text("<b>Error:</b> Failed to process manifest. Verify valid UTF-8 encoding.", parse_mode=ParseMode.HTML)
 
 
 async def digest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -250,6 +319,69 @@ async def digest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             disable_web_page_preview=True,
             reply_markup=get_persistent_reply_keyboard(),
         )
+
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Export OASIS STIX 2.1 Threat Intelligence bundle for a CVE."""
+    if not context.args:
+        if update.effective_message:
+            await update.effective_message.reply_text("<b>Usage:</b> <code>/export CVE-2024-3400</code>", parse_mode=ParseMode.HTML)
+        return
+
+    cve_id = context.args[0].strip().upper()
+    dossier_svc = _get_dossier_service(context)
+    cve = await dossier_svc.get_cve_dossier(cve_id)
+    if not cve:
+        if update.effective_message:
+            await update.effective_message.reply_text(
+                f"<b>Error:</b> Could not find intelligence records for <code>{html.escape(cve_id)}</code>.",
+                parse_mode=ParseMode.HTML,
+            )
+        return
+
+    stix_bytes = STIX21Exporter.export_json_bytes(cve)
+    chat_id = update.effective_chat.id
+    await context.bot.send_document(
+        chat_id=chat_id,
+        document=io.BytesIO(stix_bytes),
+        filename=f"{cve_id}_stix21.json",
+        caption=f"OASIS STIX 2.1 Threat Intelligence Bundle // {cve_id}",
+    )
+
+
+async def audit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Perform an instant SBOM security posture audit on watchlist components."""
+    chat_id = str(update.effective_chat.id)
+    repo = _get_repo(context)
+    sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
+    filt = sub.filters if sub else SubscriptionFilter()
+
+    targets = filt.watchlist
+    if context.args:
+        targets = WatchlistParser.parse_comma_separated(" ".join(context.args))
+
+    if not targets:
+        if update.effective_message:
+            await update.effective_message.reply_text(
+                "<b>SBOM Audit:</b> No components monitored. Upload a <code>requirements.txt</code> or run <code>/audit nginx, redis, curl</code> to evaluate.",
+                parse_mode=ParseMode.HTML,
+            )
+        return
+
+    status_msg = None
+    if update.effective_message:
+        status_msg = await update.effective_message.reply_text(
+            "<code>AUDIT // Running SBOM vulnerability posture scan...</code>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    audit_svc = ManifestAuditService(repo)
+    report = await audit_svc.audit_dependencies(targets)
+
+    if status_msg:
+        await status_msg.edit_text(report.summary_html, parse_mode=ParseMode.HTML)
+    elif update.effective_message:
+        await update.effective_message.reply_text(report.summary_html, parse_mode=ParseMode.HTML)
 
 
 async def subscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -530,7 +662,34 @@ async def handle_callback_navigation(update: Update, context: ContextTypes.DEFAU
         else:
             await query.message.reply_text(f"❌ Details for {cve_id} not available.")
 
-    # 3. View Full CVE Dossier from Briefing
+    # 3. MITRE ATT&CK Mapping Callback
+    elif data.startswith("mitre_"):
+        cve_id = data.replace("mitre_", "")
+        dossier_svc = _get_dossier_service(context)
+        cve = await dossier_svc.get_cve_dossier(cve_id)
+        if cve:
+            breakdown = MitreAttackService.format_mitre_breakdown(cve)
+            await query.message.reply_text(breakdown, parse_mode=ParseMode.HTML)
+        else:
+            await query.message.reply_text(f"❌ Details for {cve_id} not available.")
+
+    # 4. Export STIX 2.1 Bundle Callback
+    elif data.startswith("export_stix_"):
+        cve_id = data.replace("export_stix_", "")
+        dossier_svc = _get_dossier_service(context)
+        cve = await dossier_svc.get_cve_dossier(cve_id)
+        if cve:
+            stix_bytes = STIX21Exporter.export_json_bytes(cve)
+            await context.bot.send_document(
+                chat_id=query.message.chat.id,
+                document=io.BytesIO(stix_bytes),
+                filename=f"{cve_id}_stix21.json",
+                caption=f"OASIS STIX 2.1 Threat Intelligence Bundle // {cve_id}",
+            )
+        else:
+            await query.message.reply_text(f"❌ Details for {cve_id} not available.")
+
+    # 5. View Full CVE Dossier from Briefing
     elif data.startswith("cve_view_"):
         cve_id = data.replace("cve_view_", "")
         await cve_lookup_command(update, context, cve_id_override=cve_id)
@@ -635,9 +794,17 @@ async def handle_text_menu_buttons(update: Update, context: ContextTypes.DEFAULT
         await cve_lookup_command(update, context, cve_id_override=cve_match.group(0))
         return
 
+    MENU_BUTTONS = [
+        "🔍 Latest CVEs", "🔥 CISA 0-Days", "📦 My Watchlist",
+        "☕ Threat Digest", "⚙️ My Filters", "❓ Help",
+        "🔔 Subscribe", "🔕 Unsubscribe"
+    ]
+    is_command_or_menu = text.startswith("/") or text in MENU_BUTTONS
+
     # 2. Check if we were waiting for user input for a filter
-    awaiting = context.user_data.pop("awaiting_filter", None)
-    if awaiting:
+    awaiting = context.user_data.get("awaiting_filter")
+    if awaiting and not is_command_or_menu:
+        context.user_data.pop("awaiting_filter")
         sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
         filt = sub.filters if sub else SubscriptionFilter()
 

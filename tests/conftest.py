@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from cve_tracker.core.config import Settings
 from cve_tracker.models.cve import (
@@ -18,15 +19,6 @@ from cve_tracker.models.filter import SubscriptionFilter
 from cve_tracker.models.subscriber import ChannelType
 from cve_tracker.storage.models import Base
 from cve_tracker.storage.repository import CVERepository
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for test suite."""
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture
@@ -44,8 +36,13 @@ def test_settings() -> Settings:
 
 @pytest_asyncio.fixture
 async def async_engine():
-    """Create in-memory SQLite engine for tests."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    """Create in-memory SQLite engine for tests with StaticPool to retain state across sessions."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+        echo=False,
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine

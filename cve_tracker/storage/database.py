@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import AsyncGenerator
 from loguru import logger
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -15,17 +16,34 @@ from cve_tracker.storage.models import Base
 def create_db_engine(database_url: str) -> AsyncEngine:
     """Create and configure asynchronous SQLAlchemy database engine."""
     # Ensure data directory exists if local sqlite
-    if "sqlite" in database_url and "///" in database_url:
-        db_path = database_url.split("///")[-1]
-        parent_dir = Path(db_path).parent
-        if parent_dir and not parent_dir.exists():
-            parent_dir.mkdir(parents=True, exist_ok=True)
+    connect_args = {}
+    if "sqlite" in database_url:
+        connect_args["timeout"] = 30.0
+        if "///" in database_url:
+            db_path = database_url.split("///")[-1]
+            parent_dir = Path(db_path).parent
+            if parent_dir and not parent_dir.exists():
+                parent_dir.mkdir(parents=True, exist_ok=True)
 
     engine = create_async_engine(
         database_url,
         echo=False,
         future=True,
+        connect_args=connect_args,
     )
+
+    if "sqlite" in database_url:
+        @event.listens_for(engine.sync_engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+            except Exception:
+                pass
+            finally:
+                cursor.close()
+
     return engine
 
 

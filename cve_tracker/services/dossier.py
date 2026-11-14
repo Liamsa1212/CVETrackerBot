@@ -83,14 +83,22 @@ class CVEDossierService:
         return InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(
-                    "💡 Explain & Mitigation Advice",
-                    callback_data=f"explain_{cve_id}",
-                )
+                    "🗺️ ATT&CK Mapping",
+                    callback_data=f"mitre_{cve_id}",
+                ),
+                InlineKeyboardButton(
+                    "📥 Export STIX 2.1",
+                    callback_data=f"export_stix_{cve_id}",
+                ),
             ],
             [
                 InlineKeyboardButton(
-                    "🔗 View on NVD",
+                    "💡 Threat Explainer",
+                    callback_data=f"explain_{cve_id}",
+                ),
+                InlineKeyboardButton(
+                    "🌐 NVD Advisory",
                     url=f"https://nvd.nist.gov/vuln/detail/{cve_id}",
-                )
-            ]
+                ),
+            ],
         ])
