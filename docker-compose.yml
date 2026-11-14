@@ -1,0 +1,30 @@
+services:
+  cve-tracker-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cve_tracker_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///app/data/cve_tracker.db
+      - LOG_LEVEL=INFO
+      - LOG_JSON=true
+    volumes:
+      - cve_data:/app/data
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.2"
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+
+volumes:
+  cve_data:
+    driver: local

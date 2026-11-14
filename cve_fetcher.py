@@ -1,61 +1,43 @@
-import os
-import requests
-from datetime import datetime, timedelta
+"""Legacy fetcher interface preserved for backward compatibility."""
 
-NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-API_KEY = os.getenv("NVD_API_KEY")
+import asyncio
+from typing import Any, Dict, List, Optional
+from cve_tracker.core.config import get_settings
+from cve_tracker.fetchers.nvd import NVDFetcher
+from cve_tracker.models.cve import CVEItem
+from cve_tracker.models.filter import SubscriptionFilter
 
-def get_latest_cves(limit=10, min_score=7.0, user_filter=None):
-    headers = {"apiKey": API_KEY}
-    now = datetime.utcnow()
-    yesterday = now - timedelta(days=1)
 
-    params = {
-        "startIndex": 0,
-        "resultsPerPage": limit,
-        "pubStartDate": yesterday.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-        "pubEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-    }
+def get_latest_cves(limit: int = 10, min_score: float = 7.0, user_filter: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Synchronous bridge calling the async NVDFetcher."""
+    settings = get_settings()
+    fetcher = NVDFetcher(settings)
 
+    async def _fetch():
+        items = await fetcher.fetch_latest(limit=limit)
+        await fetcher.close()
+        return items
+
+    loop = asyncio.new_event_loop()
     try:
-        response = requests.get(NVD_API_URL, headers=headers, params=params, timeout=15)
-        response.raise_for_status()
-        data = response.json()
+        items = loop.run_until_complete(_fetch())
+    finally:
+        loop.close()
 
-        results = []
-        for item in data.get("vulnerabilities", []):
-            cve = item.get("cve", {})
-            cve_id = cve.get("id")
-            summary = next((d["value"] for d in cve.get("descriptions", []) if d["lang"] == "en"), None)
+    filter_model = SubscriptionFilter(
+        min_cvss=min_score,
+        vendors=user_filter.get("vendor", []) if user_filter else [],
+        keywords=user_filter.get("keyword", []) if user_filter else [],
+        cwes=user_filter.get("cwe", []) if user_filter else [],
+    )
 
-            metrics = cve.get("metrics", {})
-            score = None
-            for key in ["cvssMetricV31", "cvssMetricV30", "cvssMetricV2"]:
-                if key in metrics:
-                    score = metrics[key][0].get("cvssData", {}).get("baseScore")
-                    break
-
-            if score is None or score < min_score:
-                continue
-
-            references = cve.get("references", [])
-            poc = next((r["url"] for r in references if "github.com" in r.get("url", "")), None)
-
-            if not cve_id or not summary:
-                continue
-
-            if user_filter:
-                text = summary.lower()
-                vendor_match = any(v in text for v in user_filter.get("vendor", []))
-                keyword_match = any(k in text for k in user_filter.get("keyword", []))
-                cwe_match = any(cwe in summary for cwe in user_filter.get("cwe", []))
-
-                if not (vendor_match or keyword_match or cwe_match):
-                    continue
-
-            results.append({"id": cve_id, "summary": summary, "score": score, "poc": poc})
-
-        return results
-    except Exception as e:
-        print(f"❌ Error fetching CVEs: {e}")
-        return []
+    results = []
+    for item in items:
+        if filter_model.matches(item):
+            results.append({
+                "id": item.id,
+                "summary": item.description,
+                "score": item.cvss.score if item.cvss else None,
+                "poc": item.poc_urls[0] if item.poc_urls else None,
+            })
+    return results
