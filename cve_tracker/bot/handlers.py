@@ -24,12 +24,29 @@ from cve_tracker.models.subscriber import ChannelType
 from cve_tracker.notifiers.telegram import TelegramNotifier
 from cve_tracker.storage.repository import CVERepository
 
-# Conversation States for Filter Configuration
-AWAITING_FILTER_VALUE = 1
-
 
 def _get_repo(context: ContextTypes.DEFAULT_TYPE) -> CVERepository:
     return context.bot_data["repository"]
+
+
+def format_filters_summary(f: SubscriptionFilter) -> str:
+    """Render a clean HTML overview of active filters."""
+    cisa_text = "🟢 Enabled (Alert only on actively exploited 0-days)" if f.cisa_kev_only else "⚪ Disabled (All CVE sources)"
+    poc_text = "🟢 Enabled (Alert only if public exploit exists)" if f.has_poc_only else "⚪ Disabled"
+    min_score_text = f"{f.min_cvss:.1f}" if f.min_cvss is not None else "Any"
+
+    lines = [
+        "⚙️ <b>Your Current Alert Filters:</b>\n",
+        f"• <b>Minimum CVSS Score:</b> <code>{min_score_text}</code>",
+        f"• <b>CISA KEV 0-Day Only:</b> {cisa_text}",
+        f"• <b>Must Have PoC Exploit:</b> {poc_text}",
+        f"• <b>Vendors:</b> {', '.join(f'<code>{html.escape(v)}</code>' for v in f.vendors) if f.vendors else '<i>All Vendors</i>'}",
+        f"• <b>Products:</b> {', '.join(f'<code>{html.escape(p)}</code>' for p in f.products) if f.products else '<i>All Products</i>'}",
+        f"• <b>Keywords:</b> {', '.join(f'<code>{html.escape(k)}</code>' for k in f.keywords) if f.keywords else '<i>All Keywords</i>'}",
+        f"• <b>CWEs:</b> {', '.join(f'<code>{html.escape(c)}</code>' for c in f.cwes) if f.cwes else '<i>All CWEs</i>'}",
+        "\n<i>Tap an action below to add a filter or toggle rules:</i>",
+    ]
+    return "\n".join(lines)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -41,13 +58,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "Use the persistent menu buttons below or the inline dashboard to navigate:"
     )
     if update.effective_message:
-        # First send/activate the persistent bottom menu keyboard
         await update.effective_message.reply_text(
             welcome_text,
             parse_mode=ParseMode.HTML,
             reply_markup=get_persistent_reply_keyboard(),
         )
-        # Then send the inline dashboard menu
         await update.effective_message.reply_text(
             "👇 <b>Quick Action Dashboard:</b>",
             parse_mode=ParseMode.HTML,
@@ -65,8 +80,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "• 🔥 <b>CISA 0-Days</b> — View actively exploited CVEs (CISA KEV catalog)\n"
         "• 🔔 <b>Subscribe</b> — Receive real-time alerts automatically\n"
         "• 🔕 <b>Unsubscribe</b> — Pause automated alerts\n"
-        "• ⚙️ <b>My Filters</b> — View and edit alert filters\n\n"
-        "<b>Advanced command shortcuts:</b>\n"
+        "• ⚙️ <b>My Filters</b> — View and configure your alert filters\n\n"
+        "<b>Direct shortcuts:</b>\n"
         "• <code>/setminscore &lt;score&gt;</code> — Set minimum CVSS (e.g. <code>/setminscore 7.5</code>)\n"
         "• <code>/addfilter &lt;type&gt; &lt;val&gt;</code> — Add filter (e.g. <code>/addfilter vendor microsoft</code>)\n"
         "• <code>/clearfilters</code> — Reset all filters to default\n"
@@ -182,22 +197,13 @@ async def filters_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
 
     f = sub.filters if sub else SubscriptionFilter()
-    lines = [
-        "⚙️ <b>Your Current Alert Filters:</b>\n",
-        f"• <b>Minimum CVSS:</b> {f.min_cvss if f.min_cvss is not None else 'Any'}",
-        f"• <b>CISA KEV Only:</b> {'Yes' if f.cisa_kev_only else 'No'}",
-        f"• <b>Must Have PoC:</b> {'Yes' if f.has_poc_only else 'No'}",
-        f"• <b>Vendors:</b> {', '.join(f.vendors) if f.vendors else 'None (All)'}",
-        f"• <b>Products:</b> {', '.join(f.products) if f.products else 'None (All)'}",
-        f"• <b>Keywords:</b> {', '.join(f.keywords) if f.keywords else 'None (All)'}",
-        f"• <b>CWEs:</b> {', '.join(f.cwes) if f.cwes else 'None (All)'}",
-    ]
+    msg = format_filters_summary(f)
 
     if update.effective_message:
         await update.effective_message.reply_text(
-            "\n".join(lines),
+            msg,
             parse_mode=ParseMode.HTML,
-            reply_markup=get_filter_type_menu(),
+            reply_markup=get_filter_type_menu(f),
         )
 
 
@@ -301,13 +307,17 @@ async def clear_filters_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def handle_callback_navigation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle inline button clicks from menus."""
+    """Handle inline button clicks from menus with dynamic feedback."""
     query = update.callback_query
     if not query:
         return
     await query.answer()
 
     data = query.data
+    chat_id = str(query.message.chat.id)
+    repo = _get_repo(context)
+
+    # 1. Main Navigation Handlers
     if data == "nav_latest":
         await latest_command(update, context)
     elif data == "nav_cisa":
@@ -320,34 +330,157 @@ async def handle_callback_navigation(update: Update, context: ContextTypes.DEFAU
         await filters_command(update, context)
     elif data == "nav_help":
         await help_command(update, context)
-    elif data == "filter_clear":
-        await clear_filters_command(update, context)
     elif data == "nav_menu":
         await start_command(update, context)
 
+    # 2. Filter Action & Input Prompts
+    elif data == "filter_add_vendor":
+        context.user_data["awaiting_filter"] = "vendor"
+        await query.message.reply_text(
+            "🏢 <b>Add Vendor Filter</b>\n\n"
+            "Please send the vendor name you want to track (e.g. <code>Microsoft</code>, <code>Cisco</code>, <code>Apple</code>):",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data == "filter_add_product":
+        context.user_data["awaiting_filter"] = "product"
+        await query.message.reply_text(
+            "📦 <b>Add Product Filter</b>\n\n"
+            "Please send the product name you want to track (e.g. <code>Windows</code>, <code>Chrome</code>, <code>IOS_XE</code>):",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data == "filter_add_keyword":
+        context.user_data["awaiting_filter"] = "keyword"
+        await query.message.reply_text(
+            "🔑 <b>Add Keyword Filter</b>\n\n"
+            "Please send the vulnerability keyword (e.g. <code>remote code execution</code>, <code>privilege escalation</code>, <code>rce</code>):",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data == "filter_add_cwe":
+        context.user_data["awaiting_filter"] = "cwe"
+        await query.message.reply_text(
+            "🏷️ <b>Add CWE Filter</b>\n\n"
+            "Please send the CWE identifier (e.g. <code>CWE-79</code> for XSS, <code>CWE-89</code> for SQLi):",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data == "filter_set_score":
+        context.user_data["awaiting_filter"] = "min_cvss"
+        await query.message.reply_text(
+            "📊 <b>Set Minimum CVSS Score</b>\n\n"
+            "Please send the minimum score (e.g. <code>7.0</code> for High+, <code>9.0</code> for Critical, or <code>0</code> for Any):",
+            parse_mode=ParseMode.HTML,
+        )
+
+    # 3. Filter Toggles
+    elif data == "filter_toggle_cisa":
+        sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
+        filt = sub.filters if sub else SubscriptionFilter()
+        filt.cisa_kev_only = not filt.cisa_kev_only
+        await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, filt)
+        # Edit current message in-place with updated status
+        new_text = format_filters_summary(filt)
+        await query.edit_message_text(
+            new_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_filter_type_menu(filt),
+        )
+
+    elif data == "filter_toggle_poc":
+        sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
+        filt = sub.filters if sub else SubscriptionFilter()
+        filt.has_poc_only = not filt.has_poc_only
+        await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, filt)
+        new_text = format_filters_summary(filt)
+        await query.edit_message_text(
+            new_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_filter_type_menu(filt),
+        )
+
+    elif data == "filter_clear":
+        empty_filter = SubscriptionFilter()
+        await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, empty_filter)
+        new_text = format_filters_summary(empty_filter)
+        await query.edit_message_text(
+            new_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_filter_type_menu(empty_filter),
+        )
+
 
 async def handle_text_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle persistent bottom keyboard button presses or plain text shortcuts."""
+    """Handle persistent bottom keyboard button presses, text shortcuts, and filter input responses."""
     if not update.effective_message or not update.effective_message.text:
         return
 
-    text = update.effective_message.text.strip().lower()
+    text = update.effective_message.text.strip()
+    chat_id = str(update.effective_chat.id)
+    repo = _get_repo(context)
 
-    if "latest" in text:
+    # Check if we were waiting for user input for a filter
+    awaiting = context.user_data.pop("awaiting_filter", None)
+    if awaiting:
+        sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
+        filt = sub.filters if sub else SubscriptionFilter()
+
+        if awaiting == "min_cvss":
+            try:
+                score = float(text)
+                if not (0.0 <= score <= 10.0):
+                    raise ValueError()
+                filt.min_cvss = score if score > 0 else None
+                await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, filt)
+                await update.effective_message.reply_text(
+                    f"✅ <b>Minimum CVSS threshold set to:</b> <code>{score:.1f}</code>",
+                    parse_mode=ParseMode.HTML,
+                )
+                await filters_command(update, context)
+                return
+            except ValueError:
+                await update.effective_message.reply_text("❌ Please enter a valid number between 0.0 and 10.0 (e.g. 7.5).")
+                context.user_data["awaiting_filter"] = "min_cvss"
+                return
+
+        mapping = {"vendor": "vendors", "product": "products", "keyword": "keywords", "cwe": "cwes"}
+        target_list_name = mapping.get(awaiting)
+        if target_list_name:
+            val = text.lower()
+            curr_list: list = getattr(filt, target_list_name)
+            if val not in curr_list:
+                curr_list.append(val)
+                setattr(filt, target_list_name, curr_list)
+                await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, filt)
+                await update.effective_message.reply_text(
+                    f"✅ Added <code>{html.escape(val)}</code> to your <b>{awaiting}</b> filters!",
+                    parse_mode=ParseMode.HTML,
+                )
+            else:
+                await update.effective_message.reply_text(
+                    f"⚠️ <code>{html.escape(val)}</code> is already in your {awaiting} filter list.",
+                    parse_mode=ParseMode.HTML,
+                )
+            await filters_command(update, context)
+            return
+
+    # Normal menu navigation matches
+    lower_text = text.lower()
+    if "latest" in lower_text:
         await latest_command(update, context)
-    elif "cisa" in text or "0-day" in text or "zero-day" in text:
+    elif "cisa" in lower_text or "0-day" in lower_text or "zero-day" in lower_text:
         await cisa_command(update, context)
-    elif "unsubscribe" in text:
+    elif "unsubscribe" in lower_text:
         await unsubscribe_command(update, context)
-    elif "subscribe" in text:
+    elif "subscribe" in lower_text:
         await subscribe_command(update, context)
-    elif "filter" in text:
+    elif "filter" in lower_text:
         await filters_command(update, context)
-    elif "help" in text or "menu" in text:
+    elif "help" in lower_text or "menu" in lower_text:
         await help_command(update, context)
     else:
-        # If user types something unrecognized, present the main menu
         await update.effective_message.reply_text(
-            "🤖 Select an option from the menu below:",
+            "🤖 Tap an option from the menu below:",
             reply_markup=get_persistent_reply_keyboard(),
         )

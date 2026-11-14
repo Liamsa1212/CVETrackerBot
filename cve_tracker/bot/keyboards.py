@@ -1,11 +1,13 @@
 """Inline keyboards and persistent menus for Telegram Bot."""
 
+from typing import Optional
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
     ReplyKeyboardMarkup,
 )
+from cve_tracker.models.filter import SubscriptionFilter
 
 
 def get_persistent_reply_keyboard() -> ReplyKeyboardMarkup:
@@ -39,19 +41,31 @@ def get_main_menu() -> InlineKeyboardMarkup:
     ])
 
 
-def get_filter_type_menu() -> InlineKeyboardMarkup:
-    """Filter selection keyboard."""
+def get_filter_type_menu(filt: Optional[SubscriptionFilter] = None) -> InlineKeyboardMarkup:
+    """Filter management keyboard with dynamic toggles and action triggers."""
+    f = filt or SubscriptionFilter()
+    cisa_status = "🟢 ON" if f.cisa_kev_only else "⚪ OFF"
+    poc_status = "🟢 ON" if f.has_poc_only else "⚪ OFF"
+    score_display = f"{f.min_cvss:.1f}" if f.min_cvss is not None else "Any"
+
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🏢 Vendor", callback_data="filter_add_vendor"),
-            InlineKeyboardButton("📦 Product", callback_data="filter_add_product"),
+            InlineKeyboardButton("🏢 + Add Vendor", callback_data="filter_add_vendor"),
+            InlineKeyboardButton("📦 + Add Product", callback_data="filter_add_product"),
         ],
         [
-            InlineKeyboardButton("🔑 Keyword", callback_data="filter_add_keyword"),
-            InlineKeyboardButton("🏷️ CWE", callback_data="filter_add_cwe"),
+            InlineKeyboardButton("🔑 + Add Keyword", callback_data="filter_add_keyword"),
+            InlineKeyboardButton("🏷️ + Add CWE", callback_data="filter_add_cwe"),
+        ],
+        [
+            InlineKeyboardButton(f"📊 Min CVSS: {score_display}", callback_data="filter_set_score"),
+        ],
+        [
+            InlineKeyboardButton(f"🔥 CISA Only: {cisa_status}", callback_data="filter_toggle_cisa"),
+            InlineKeyboardButton(f"🧪 PoC Only: {poc_status}", callback_data="filter_toggle_poc"),
         ],
         [
             InlineKeyboardButton("🧹 Clear All Filters", callback_data="filter_clear"),
-            InlineKeyboardButton("🔙 Back to Menu", callback_data="nav_menu"),
+            InlineKeyboardButton("🔙 Back to Main Menu", callback_data="nav_menu"),
         ],
     ])
