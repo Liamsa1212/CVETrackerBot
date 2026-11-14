@@ -1,4 +1,4 @@
-# 🛡️ CVE Tracker Bot v2.0
+# 🛡️ CVE Tracker Bot v2.1
 
 <p align="center">
   <img src="logo.jpg" alt="CVE Tracker Bot" width="220">
@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/pydantic-v2.x-green?logo=pydantic" alt="Pydantic v2">
   <img src="https://img.shields.io/badge/asyncio-httpx%20%2B%20aiosqlite-purple" alt="Async Engine">
   <img src="https://img.shields.io/badge/docker-multi--stage-2496ED?logo=docker" alt="Docker Ready">
-  <img src="https://img.shields.io/badge/tests-24%20passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-34%20passed-brightgreen" alt="Tests">
 </p>
 
 ---
@@ -198,16 +198,20 @@ docker compose logs -f
 
 ---
 
-## 🤖 Telegram Bot Commands
+## 🤖 Telegram Bot Commands & Shortcuts
 
 | Command | Description |
 | :--- | :--- |
-| `/start` | Launch interactive navigation menu |
+| `/start` | Launch interactive navigation menu & persistent button dashboard |
 | `/latest` | Fetch the 5 most recent vulnerabilities matching criteria |
 | `/cisa` | Fetch recent actively exploited zero-days (CISA KEV) |
+| `/cve <ID>` | Instant intelligence dossier on any CVE (e.g. `/cve CVE-2024-3400`) |
+| `/watch <pkgs>` | Add dependencies to tech stack watchlist (e.g. `/watch nginx, redis`) |
+| *File Upload* | Drag and drop any `requirements.txt` or `package.json` to auto-import |
+| `/digest` | Generate on-demand 24h executive morning threat briefing |
 | `/subscribe` | Subscribe chat or channel to real-time alerts |
 | `/unsubscribe` | Unsubscribe chat from alerts |
-| `/filters` | View current active filters (Vendors, Keywords, Min CVSS, CWE) |
+| `/filters` | View current active filters (Vendors, Keywords, Min CVSS, EPSS, CWE) |
 | `/setminscore <score>` | Set minimum CVSS threshold (e.g. `/setminscore 7.5`) |
 | `/addfilter <type> <val>` | Add filter (e.g. `/addfilter vendor microsoft` or `/addfilter keyword rce`) |
 | `/clearfilters` | Reset all filters to default |
