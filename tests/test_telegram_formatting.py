@@ -32,5 +32,28 @@ def test_telegram_html_formatting():
     assert "&lt;vendor&gt;" in formatted
     assert "&lt;product&gt;" in formatted
     assert "<b>CVE-2024-8888</b>" in formatted
-    assert "<code>8.5</code>" in formatted
+    assert "<code>HIGH 8.5</code>" in formatted
     assert "https://github.com/test/poc" in formatted
+
+
+def test_telegram_format_briefing_list():
+    cve1 = CVEItem(
+        id="CVE-2024-0001",
+        source=SourceType.NVD,
+        description="First issue",
+        cvss=CVSSData(score=9.8, severity=Severity.CRITICAL),
+    )
+    cve2 = CVEItem(
+        id="CVE-2024-0002",
+        source=SourceType.CISA_KEV,
+        description="Second zero-day issue",
+        cvss=CVSSData(score=9.0, severity=Severity.CRITICAL),
+        is_cisa_kev=True,
+    )
+
+    briefing = TelegramNotifier.format_briefing_list([cve1, cve2], title="Latest Vulnerabilities")
+
+    assert "Latest Vulnerabilities" in briefing
+    assert "1. <b>CVE-2024-0001</b>" in briefing
+    assert "2. <b>CVE-2024-0002</b>" in briefing
+    assert "[<b>CISA KEV</b>]" in briefing

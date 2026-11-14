@@ -295,7 +295,7 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def latest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Fetch and display latest CVEs from the database."""
+    """Fetch and display latest CVEs from the database in a single scannable briefing."""
     repo = _get_repo(context)
     chat_id = str(update.effective_chat.id)
     sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
@@ -312,20 +312,31 @@ async def latest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
         return
 
-    for cve in cves:
-        html_msg = TelegramNotifier.format_html_alert(cve)
-        markup = CVEDossierService.get_dossier_markup(cve.id)
-        if update.effective_message:
-            await update.effective_message.reply_text(
-                html_msg,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True,
-                reply_markup=markup,
-            )
+    briefing_text = TelegramNotifier.format_briefing_list(cves, title="Latest Vulnerabilities")
+
+    buttons = []
+    row = []
+    for idx, cve in enumerate(cves, 1):
+        row.append(InlineKeyboardButton(f"{idx}. {cve.id}", callback_data=f"cve_view_{cve.id}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    markup = InlineKeyboardMarkup(buttons) if buttons else None
+
+    if update.effective_message:
+        await update.effective_message.reply_text(
+            briefing_text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=markup,
+        )
 
 
 async def cisa_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Fetch and display recent CISA KEV entries."""
+    """Fetch and display recent CISA KEV entries in a single scannable briefing."""
     repo = _get_repo(context)
     cves = await repo.get_latest_cves(limit=5, cisa_only=True)
 
@@ -338,16 +349,27 @@ async def cisa_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
         return
 
-    for cve in cves:
-        html_msg = TelegramNotifier.format_html_alert(cve)
-        markup = CVEDossierService.get_dossier_markup(cve.id)
-        if update.effective_message:
-            await update.effective_message.reply_text(
-                html_msg,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True,
-                reply_markup=markup,
-            )
+    briefing_text = TelegramNotifier.format_briefing_list(cves, title="CISA Known Exploited 0-Days")
+
+    buttons = []
+    row = []
+    for idx, cve in enumerate(cves, 1):
+        row.append(InlineKeyboardButton(f"{idx}. {cve.id}", callback_data=f"cve_view_{cve.id}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    markup = InlineKeyboardMarkup(buttons) if buttons else None
+
+    if update.effective_message:
+        await update.effective_message.reply_text(
+            briefing_text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+            reply_markup=markup,
+        )
 
 
 async def filters_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -507,6 +529,11 @@ async def handle_callback_navigation(update: Update, context: ContextTypes.DEFAU
             await query.message.reply_text(explanation, parse_mode=ParseMode.HTML)
         else:
             await query.message.reply_text(f"❌ Details for {cve_id} not available.")
+
+    # 3. View Full CVE Dossier from Briefing
+    elif data.startswith("cve_view_"):
+        cve_id = data.replace("cve_view_", "")
+        await cve_lookup_command(update, context, cve_id_override=cve_id)
 
     # 3. Filter Actions & Input Prompts
     elif data == "filter_add_vendor":
