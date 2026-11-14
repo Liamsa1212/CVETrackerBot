@@ -40,8 +40,16 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
 
 
 async def init_db(engine: AsyncEngine) -> None:
-    """Initialize database tables."""
+    """Initialize database tables and run lightweight automatic column migrations."""
     logger.info("Initializing database schema...")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migrate schema additions gracefully on existing databases
+        for col, col_type in (("epss_score", "FLOAT"), ("epss_percentile", "FLOAT")):
+            try:
+                await conn.exec_driver_sql(f"ALTER TABLE cves ADD COLUMN {col} {col_type}")
+                logger.info(f"Migrated column {col} into cves table.")
+            except Exception:
+                # Column already exists
+                pass
     logger.info("Database schema initialized successfully.")
