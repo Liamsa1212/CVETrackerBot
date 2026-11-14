@@ -1,7 +1,7 @@
 # 🛡️ CVE Tracker Bot v2.1
 
 <p align="center">
-  <img src="logo.jpg" alt="CVE Tracker Bot" width="220">
+  <img src="docs/assets/logo.jpg" alt="CVE Tracker Bot" width="220">
 </p>
 
 <p align="center">
@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/pydantic-v2.x-green?logo=pydantic" alt="Pydantic v2">
   <img src="https://img.shields.io/badge/asyncio-httpx%20%2B%20aiosqlite-purple" alt="Async Engine">
   <img src="https://img.shields.io/badge/docker-multi--stage-2496ED?logo=docker" alt="Docker Ready">
-  <img src="https://img.shields.io/badge/tests-34%20passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-35%20passed-brightgreen" alt="Tests">
 </p>
 
 ---
@@ -90,40 +90,25 @@ flowchart TD
 
 ```
 CVETrackerBot/
-├── cve_tracker/
-│   ├── core/                  # Config, logging, exceptions, token bucket limiter
-│   │   ├── config.py
-│   │   ├── exceptions.py
-│   │   ├── logging.py
-│   │   └── rate_limiter.py
-│   ├── fetchers/              # External vulnerability API clients
-│   │   ├── base.py
-│   │   ├── cisa_kev.py
-│   │   ├── github.py
-│   │   ├── manager.py
-│   │   └── nvd.py
-│   ├── models/                # Pydantic v2 domain schemas & filters
-│   │   ├── cve.py
-│   │   ├── filter.py
-│   │   └── subscriber.py
-│   ├── notifiers/             # Telegram, Discord, and Webhook dispatchers
-│   │   ├── base.py
-│   │   ├── discord.py
-│   │   ├── dispatcher.py
-│   │   ├── telegram.py
-│   │   └── webhook.py
-│   ├── storage/               # Async SQLAlchemy engine & repository
-│   │   ├── database.py
-│   │   ├── models.py
-│   │   └── repository.py
+├── cve_tracker/               # Application source code
 │   ├── bot/                   # Telegram bot service, handlers & menus
-│   │   ├── handlers.py
-│   │   ├── keyboards.py
-│   │   └── service.py
-│   └── main.py                # Application entrypoint & worker lifecycle
-├── tests/                     # Comprehensive async test suite
-├── Dockerfile                 # Multi-stage non-root production container
-├── docker-compose.yml         # Container orchestration with persistent volume
+│   ├── core/                  # Config, logging, exceptions, token bucket limiter
+│   ├── fetchers/              # NVD, CISA KEV, GitHub, and EPSS clients
+│   ├── models/                # Pydantic v2 schemas & filter logic
+│   ├── notifiers/             # Telegram, Discord, and Webhook dispatchers
+│   ├── services/              # Dossier lookup, watchlist parser, digest, explainer
+│   ├── storage/               # Async SQLAlchemy engine & repository
+│   └── main.py                # Main application entry point
+├── deploy/                    # Container & deployment configs
+│   ├── Dockerfile             # Multi-stage non-root container
+│   └── docker-compose.yml     # Orchestration with persistent volume
+├── docs/                      # Documentation, plans & assets
+│   ├── assets/logo.jpg        # Project logo
+│   └── superpowers/plans/     # Implementation specifications
+├── tests/                     # Comprehensive test suite (35 tests)
+├── .env.example               # Clean environment variables template
+├── .gitignore                 # Standard git ignore
+├── bot.py                     # Convenience entry point
 ├── pyproject.toml             # Project metadata & test configuration
 └── requirements.txt           # Pinned production dependencies
 ```
@@ -190,10 +175,10 @@ cp .env.example .env
 nano .env
 
 # 2. Build and start container in background
-docker compose up -d --build
+docker compose -f deploy/docker-compose.yml up -d --build
 
 # 3. View live logs
-docker compose logs -f
+docker compose -f deploy/docker-compose.yml logs -f
 ```
 
 ---

@@ -1,12 +1,12 @@
 services:
   cve-tracker-bot:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: deploy/Dockerfile
     container_name: cve_tracker_bot
     restart: unless-stopped
     env_file:
-      - .env
+      - ../.env
     environment:
       - DATABASE_URL=sqlite+aiosqlite:///app/data/cve_tracker.db
       - LOG_LEVEL=INFO
