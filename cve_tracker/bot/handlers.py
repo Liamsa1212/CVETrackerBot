@@ -7,6 +7,7 @@ from typing import Optional
 from loguru import logger
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -427,24 +428,74 @@ async def unsubscribe_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def latest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Fetch and display latest CVEs from the database in a single scannable briefing."""
+    """Fetch and display latest CVEs, respecting active subscriber filters or custom keywords."""
     repo = _get_repo(context)
     chat_id = str(update.effective_chat.id)
     sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
+    user_filter = sub.filters if sub else None
 
-    min_score = sub.filters.min_cvss if sub and sub.filters else 6.0
-    cves = await repo.get_latest_cves(limit=5, min_score=min_score)
+    # Check for CLI args like: /latest all, /latest rce, /latest nginx
+    query_arg = " ".join(context.args).strip() if context.args else None
+
+    if query_arg and query_arg.lower() == "all":
+        # Unfiltered global latest
+        cves = await repo.get_latest_cves(limit=5)
+        title = "Latest Vulnerabilities (All)"
+    elif query_arg:
+        # Dynamic query filter on-demand
+        temp_filter = SubscriptionFilter(keywords=[query_arg.lower()])
+        candidates = await repo.get_latest_cves(limit=100)
+        cves = [c for c in candidates if temp_filter.matches(c)][:5]
+        title = f"Latest Advisories ({query_arg.upper()})"
+    elif user_filter and (
+        user_filter.keywords or user_filter.vendors or user_filter.products or
+        user_filter.watchlist or user_filter.cwes or user_filter.cisa_kev_only or
+        user_filter.has_poc_only or user_filter.min_cvss or user_filter.min_epss
+    ):
+        # Apply user's saved subscription filters
+        candidates = await repo.get_latest_cves(limit=150)
+        cves = [c for c in candidates if user_filter.matches(c)][:5]
+
+        filter_tags = []
+        if user_filter.keywords:
+            filter_tags.append(f"Keyword: {', '.join(user_filter.keywords[:2])}")
+        if user_filter.vendors:
+            filter_tags.append(f"Vendor: {', '.join(user_filter.vendors[:2])}")
+        if user_filter.products:
+            filter_tags.append(f"Product: {', '.join(user_filter.products[:2])}")
+        if user_filter.watchlist:
+            filter_tags.append("Watchlist")
+        if user_filter.cisa_kev_only:
+            filter_tags.append("0-Days Only")
+
+        tag_str = f" ({' · '.join(filter_tags)})" if filter_tags else " (Filtered)"
+        title = f"Latest Advisories{tag_str}"
+    else:
+        # Default latest (no custom filters)
+        cves = await repo.get_latest_cves(limit=5)
+        title = "Latest Vulnerabilities"
 
     if not cves:
-        msg = "ℹ️ No recent vulnerabilities found matching the current threshold."
+        if user_filter and (user_filter.keywords or user_filter.vendors or user_filter.products or user_filter.watchlist):
+            active_info = ", ".join(user_filter.keywords + user_filter.vendors + user_filter.products)
+            msg = (
+                f"ℹ️ <b>No recent advisories matched your active filter:</b> <code>{html.escape(active_info or 'custom')}</code>\n\n"
+                "None of the latest 150 ingested vulnerabilities matched these criteria.\n"
+                "• View global unfiltered advisories: <code>/latest all</code>\n"
+                "• Adjust or reset your filters: <code>/filters</code>"
+            )
+        else:
+            msg = "ℹ️ No recent vulnerabilities found matching the current threshold."
+
         if update.effective_message:
             await update.effective_message.reply_text(
                 msg,
+                parse_mode=ParseMode.HTML,
                 reply_markup=get_persistent_reply_keyboard(),
             )
         return
 
-    briefing_text = TelegramNotifier.format_briefing_list(cves, title="Latest Vulnerabilities")
+    briefing_text = TelegramNotifier.format_briefing_list(cves, title=title)
 
     buttons = []
     row = []
@@ -750,11 +801,15 @@ async def handle_callback_navigation(update: Update, context: ContextTypes.DEFAU
         filt.cisa_kev_only = not filt.cisa_kev_only
         await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, filt)
         new_text = format_filters_summary(filt)
-        await query.edit_message_text(
-            new_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_filter_type_menu(filt),
-        )
+        try:
+            await query.edit_message_text(
+                new_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_filter_type_menu(filt),
+            )
+        except BadRequest as e:
+            if "not modified" not in str(e).lower() and "exactly the same" not in str(e).lower():
+                logger.warning(f"Failed to edit filter message: {e}")
 
     elif data == "filter_toggle_poc":
         sub = await repo.get_subscriber(chat_id, ChannelType.TELEGRAM)
@@ -762,21 +817,29 @@ async def handle_callback_navigation(update: Update, context: ContextTypes.DEFAU
         filt.has_poc_only = not filt.has_poc_only
         await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, filt)
         new_text = format_filters_summary(filt)
-        await query.edit_message_text(
-            new_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_filter_type_menu(filt),
-        )
+        try:
+            await query.edit_message_text(
+                new_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_filter_type_menu(filt),
+            )
+        except BadRequest as e:
+            if "not modified" not in str(e).lower() and "exactly the same" not in str(e).lower():
+                logger.warning(f"Failed to edit filter message: {e}")
 
     elif data == "filter_clear":
         empty_filter = SubscriptionFilter()
         await repo.update_subscriber_filters(chat_id, ChannelType.TELEGRAM, empty_filter)
         new_text = format_filters_summary(empty_filter)
-        await query.edit_message_text(
-            new_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_filter_type_menu(empty_filter),
-        )
+        try:
+            await query.edit_message_text(
+                new_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_filter_type_menu(empty_filter),
+            )
+        except BadRequest as e:
+            if "not modified" not in str(e).lower() and "exactly the same" not in str(e).lower():
+                logger.warning(f"Failed to edit filter message: {e}")
 
 
 async def handle_text_menu_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

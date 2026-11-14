@@ -6,6 +6,18 @@ from pydantic import BaseModel, Field
 from cve_tracker.models.cve import CVEItem, Severity
 
 
+KEYWORD_SYNONYMS = {
+    "rce": ["rce", "remote code execution", "code execution"],
+    "sqli": ["sqli", "sql injection"],
+    "xss": ["xss", "cross-site scripting"],
+    "dos": ["dos", "denial of service"],
+    "ssrf": ["ssrf", "server-side request forgery"],
+    "lfi": ["lfi", "local file inclusion"],
+    "rfi": ["rfi", "remote file inclusion"],
+    "privesc": ["privesc", "privilege escalation"],
+}
+
+
 class SubscriptionFilter(BaseModel):
     """Filter configuration applied to match CVEs for a specific subscriber."""
 
@@ -78,19 +90,23 @@ class SubscriptionFilter(BaseModel):
             if not any(p.lower() in search_corpus for p in self.products):
                 return False
 
-        # Keyword matching (use word-boundary matching for short tokens like 'rce', 'dos')
+        # Keyword matching (supports acronyms like 'rce' -> 'remote code execution')
         if self.keywords:
             matched = False
             for k in self.keywords:
                 k_clean = k.strip().lower()
                 if not k_clean:
                     continue
-                if len(k_clean) <= 4:
-                    if re.search(rf"\b{re.escape(k_clean)}\b", search_corpus):
+                variants = KEYWORD_SYNONYMS.get(k_clean, [k_clean])
+                for var in variants:
+                    if len(var) <= 4:
+                        if re.search(rf"\b{re.escape(var)}\b", search_corpus):
+                            matched = True
+                            break
+                    elif var in search_corpus:
                         matched = True
                         break
-                elif k_clean in search_corpus:
-                    matched = True
+                if matched:
                     break
             if not matched:
                 return False
