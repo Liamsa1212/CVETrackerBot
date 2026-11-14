@@ -53,6 +53,29 @@ class Reference(BaseModel):
     @property
     def is_exploit(self) -> bool:
         lower_url = self.url.lower()
+
+        # 1. Non-exploit exclusions: scanner/detection templates, advisory catalogs, issue trackers
+        exclusions = [
+            "nuclei-templates",
+            "projectdiscovery",
+            "cveproject",
+            "cvelist",
+            "/advisories/",
+            "/security/advisories",
+            "/issues/",
+            "/pull/",
+            "/commit/",
+            "/releases/",
+            "sigma",
+            "yara",
+            "snort",
+            "suricata",
+            "semgrep",
+        ]
+        if any(exc in lower_url for exc in exclusions):
+            return False
+
+        # 2. Known dedicated exploit databases & archives
         exploit_domains = [
             "exploit-db.com",
             "packetstormsecurity.com",
@@ -60,14 +83,43 @@ class Reference(BaseModel):
             "0day.today",
             "sploitus.com",
             "seclists.org/fulldisclosure",
+            "0xdeadbeef.info",
+            "zerodayinitiative.com/advisories",
         ]
-        tag_markers = ["exploit", "proof of concept", "technical description"]
-        matches_tag = any(m in tag.lower() for tag in self.tags for m in tag_markers)
-        matches_domain = any(marker in lower_url for marker in exploit_domains)
-        matches_github_poc = "github.com" in lower_url and any(
-            k in lower_url for k in ("/poc", "-poc", "poc-", "/exploit", "-exploit", "cve-")
-        )
-        return matches_tag or matches_domain or matches_github_poc
+        if any(marker in lower_url for marker in exploit_domains):
+            return True
+
+        # 3. Explicit NVD/Feed Exploit tags (excluding 'technical description' or vendor whitepapers)
+        tag_markers = ["exploit", "proof of concept", "poc"]
+        if any(m == tag.strip().lower() for tag in self.tags for m in tag_markers):
+            return True
+
+        # 4. Verified GitHub Exploit / PoC repositories
+        if "github.com" in lower_url:
+            poc_indicators = [
+                "/poc", "-poc", "_poc", "poc-", "poc_",
+                "/exploit", "-exploit", "_exploit", "exploit-", "exploit_",
+                "/exp", "-exp", "_exp",
+                "proof-of-concept", "rce-poc"
+            ]
+            if any(k in lower_url for k in poc_indicators):
+                return True
+
+        return False
+
+    @property
+    def is_detection_template(self) -> bool:
+        lower_url = self.url.lower()
+        detection_markers = [
+            "nuclei-templates",
+            "projectdiscovery",
+            "sigma",
+            "yara",
+            "snort",
+            "suricata",
+            "semgrep",
+        ]
+        return any(m in lower_url for m in detection_markers)
 
 
 class CVEItem(BaseModel):
@@ -95,6 +147,11 @@ class CVEItem(BaseModel):
     @property
     def poc_urls(self) -> List[str]:
         return [ref.url for ref in self.references if ref.is_exploit]
+
+    @computed_field
+    @property
+    def detection_urls(self) -> List[str]:
+        return [ref.url for ref in self.references if ref.is_detection_template]
 
     @computed_field
     @property

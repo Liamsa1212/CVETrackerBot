@@ -72,6 +72,8 @@ class TelegramNotifier(BaseNotifier):
         links = [f'<a href="https://nvd.nist.gov/vuln/detail/{cve.id}">NVD Advisory</a>']
         if cve.poc_urls and cve.poc_urls[0].startswith("https://"):
             links.append(f'<a href="{html.escape(cve.poc_urls[0])}">PoC Exploit</a>')
+        if cve.detection_urls and cve.detection_urls[0].startswith("https://"):
+            links.append(f'<a href="{html.escape(cve.detection_urls[0])}">Detection Template</a>')
         lines.append(" · ".join(links))
 
         return "\n".join(lines)

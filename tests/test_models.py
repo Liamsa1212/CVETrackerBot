@@ -39,6 +39,16 @@ def test_reference_exploit_detection():
     ref_normal = Reference(url="https://example.com/docs", tags=["vendor-advisory"])
     assert ref_normal.is_exploit is False
 
+    ref_nuclei = Reference(url="https://github.com/projectdiscovery/nuclei-templates/blob/main/cves/2024/CVE-2024-3400.yaml")
+    assert ref_nuclei.is_exploit is False
+    assert ref_nuclei.is_detection_template is True
+
+    ref_advisory = Reference(url="https://github.com/advisories/GHSA-97p8-q5gw-4428")
+    assert ref_advisory.is_exploit is False
+
+    ref_real_poc = Reference(url="https://github.com/BishopFox/CVE-2024-3400-Exploit")
+    assert ref_real_poc.is_exploit is True
+
 
 def test_cve_item_validation(sample_cve):
     assert sample_cve.id == "CVE-2024-9999"
