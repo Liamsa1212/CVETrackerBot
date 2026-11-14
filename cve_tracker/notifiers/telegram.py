@@ -56,6 +56,11 @@ class TelegramNotifier(BaseNotifier):
         if cve.cvss and cve.cvss.vector_string:
             lines.append(f"⚡ <b>Vector:</b> <code>{html.escape(cve.cvss.vector_string)}</code>")
 
+        # EPSS Probability
+        if cve.epss_score is not None:
+            pct_part = f" ({cve.epss_percentile * 100:.0f}th percentile)" if cve.epss_percentile is not None else ""
+            lines.append(f"📈 <b>EPSS Exploit Probability:</b> <code>{cve.epss_score * 100:.1f}%</code>{pct_part}")
+
         # Affected vendors & products
         if cve.affected_vendors or cve.affected_products:
             vp_parts = []

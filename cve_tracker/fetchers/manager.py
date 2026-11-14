@@ -8,6 +8,7 @@ from loguru import logger
 from cve_tracker.core.config import Settings
 from cve_tracker.fetchers.base import BaseCVEFetcher
 from cve_tracker.fetchers.cisa_kev import CISAKEVFetcher
+from cve_tracker.fetchers.epss import EPSSClient
 from cve_tracker.fetchers.github import GitHubAdvisoryFetcher
 from cve_tracker.fetchers.nvd import NVDFetcher
 from cve_tracker.models.cve import CVEItem
@@ -22,9 +23,11 @@ class FetcherManager:
         settings: Settings,
         repository: CVERepository,
         fetchers: Optional[List[BaseCVEFetcher]] = None,
+        epss_client: Optional[EPSSClient] = None,
     ):
         self.settings = settings
         self.repository = repository
+        self.epss_client = epss_client or EPSSClient(settings)
         if fetchers is not None:
             self.fetchers = fetchers
         else:
@@ -64,7 +67,20 @@ class FetcherManager:
             if isinstance(res, list):
                 all_cves.extend(res)
 
-        logger.info(f"Aggregated {len(all_cves)} CVE items from all sources. Persisting to database...")
+        logger.info(f"Aggregated {len(all_cves)} CVE items from all sources. Querying EPSS scores...")
+
+        # Enrich with EPSS probability
+        cve_ids_to_enrich = [c.id for c in all_cves if c.id.startswith("CVE-")]
+        if cve_ids_to_enrich:
+            try:
+                epss_scores = await self.epss_client.get_scores(cve_ids_to_enrich)
+                for c in all_cves:
+                    if c.id in epss_scores:
+                        c.epss_score, c.epss_percentile = epss_scores[c.id]
+            except Exception as e:
+                logger.warning(f"Failed to enrich batch with EPSS scores: {e}")
+
+        logger.info(f"Persisting {len(all_cves)} enriched CVEs to database...")
 
         newly_updated_cves: List[CVEItem] = []
         seen_ids = set()
@@ -88,6 +104,7 @@ class FetcherManager:
         return newly_updated_cves
 
     async def close(self) -> None:
-        """Close resources across all fetchers."""
+        """Close resources across all fetchers and clients."""
+        await self.epss_client.close()
         for f in self.fetchers:
             await f.close()

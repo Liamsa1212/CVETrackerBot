@@ -85,6 +85,8 @@ class CVEItem(BaseModel):
     affected_products: List[str] = Field(default_factory=list)
     is_cisa_kev: bool = False
     cisa_action_due: Optional[datetime] = None
+    epss_score: Optional[float] = None
+    epss_percentile: Optional[float] = None
 
     @computed_field
     @property
@@ -103,5 +105,5 @@ class CVEItem(BaseModel):
     @property
     def content_hash(self) -> str:
         """SHA-256 hash used to track state changes and avoid duplicate alerting."""
-        raw = f"{self.id}|{self.cvss.score if self.cvss else ''}|{self.description[:200]}|{self.is_cisa_kev}"
+        raw = f"{self.id}|{self.cvss.score if self.cvss else ''}|{self.epss_score or ''}|{self.description[:200]}|{self.is_cisa_kev}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()

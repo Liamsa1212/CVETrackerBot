@@ -9,11 +9,13 @@ class SubscriptionFilter(BaseModel):
     """Filter configuration applied to match CVEs for a specific subscriber."""
 
     min_cvss: Optional[float] = Field(default=None, ge=0.0, le=10.0)
+    min_epss: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     severities: List[Severity] = Field(default_factory=list)
     vendors: List[str] = Field(default_factory=list)
     products: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
     cwes: List[str] = Field(default_factory=list)
+    watchlist: List[str] = Field(default_factory=list)
     cisa_kev_only: bool = False
     has_poc_only: bool = False
 
@@ -34,6 +36,11 @@ class SubscriptionFilter(BaseModel):
         if self.min_cvss is not None:
             cve_score = cve.cvss.score if cve.cvss else None
             if cve_score is None or cve_score < self.min_cvss:
+                return False
+
+        # Minimum EPSS exploitation probability
+        if self.min_epss is not None:
+            if cve.epss_score is None or cve.epss_score < self.min_epss:
                 return False
 
         # Severity filter
@@ -73,6 +80,11 @@ class SubscriptionFilter(BaseModel):
         # Keyword matching
         if self.keywords:
             if not any(k.lower() in search_corpus for k in self.keywords):
+                return False
+
+        # Watchlist matching (direct asset tracking)
+        if self.watchlist:
+            if not any(item.lower() in search_corpus for item in self.watchlist):
                 return False
 
         return True

@@ -15,7 +15,7 @@ def get_persistent_reply_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton("🔍 Latest CVEs"), KeyboardButton("🔥 CISA 0-Days")],
-            [KeyboardButton("🔔 Subscribe"), KeyboardButton("🔕 Unsubscribe")],
+            [KeyboardButton("📦 My Watchlist"), KeyboardButton("☕ Threat Digest")],
             [KeyboardButton("⚙️ My Filters"), KeyboardButton("❓ Help")],
         ],
         resize_keyboard=True,
@@ -28,7 +28,11 @@ def get_main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔍 Latest CVEs", callback_data="nav_latest"),
-            InlineKeyboardButton("🔥 CISA KEV (0-Day)", callback_data="nav_cisa"),
+            InlineKeyboardButton("🔥 CISA 0-Days", callback_data="nav_cisa"),
+        ],
+        [
+            InlineKeyboardButton("📦 Tech Stack Watchlist", callback_data="nav_watchlist"),
+            InlineKeyboardButton("☕ Daily Digest", callback_data="nav_digest"),
         ],
         [
             InlineKeyboardButton("🔔 Subscribe", callback_data="nav_subscribe"),
@@ -46,19 +50,24 @@ def get_filter_type_menu(filt: Optional[SubscriptionFilter] = None) -> InlineKey
     f = filt or SubscriptionFilter()
     cisa_status = "🟢 ON" if f.cisa_kev_only else "⚪ OFF"
     poc_status = "🟢 ON" if f.has_poc_only else "⚪ OFF"
-    score_display = f"{f.min_cvss:.1f}" if f.min_cvss is not None else "Any"
+    cvss_display = f"{f.min_cvss:.1f}" if f.min_cvss is not None else "Any"
+    epss_display = f"{f.min_epss * 100:.0f}%" if f.min_epss is not None else "Any"
 
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🏢 + Add Vendor", callback_data="filter_add_vendor"),
-            InlineKeyboardButton("📦 + Add Product", callback_data="filter_add_product"),
+            InlineKeyboardButton("🏢 + Vendor", callback_data="filter_add_vendor"),
+            InlineKeyboardButton("📦 + Product", callback_data="filter_add_product"),
         ],
         [
-            InlineKeyboardButton("🔑 + Add Keyword", callback_data="filter_add_keyword"),
-            InlineKeyboardButton("🏷️ + Add CWE", callback_data="filter_add_cwe"),
+            InlineKeyboardButton("🔑 + Keyword", callback_data="filter_add_keyword"),
+            InlineKeyboardButton("🏷️ + CWE", callback_data="filter_add_cwe"),
         ],
         [
-            InlineKeyboardButton(f"📊 Min CVSS: {score_display}", callback_data="filter_set_score"),
+            InlineKeyboardButton("📦 Manage Watchlist", callback_data="nav_watchlist"),
+        ],
+        [
+            InlineKeyboardButton(f"📊 Min CVSS: {cvss_display}", callback_data="filter_set_score"),
+            InlineKeyboardButton(f"📈 Min EPSS: {epss_display}", callback_data="filter_set_epss"),
         ],
         [
             InlineKeyboardButton(f"🔥 CISA Only: {cisa_status}", callback_data="filter_toggle_cisa"),

@@ -53,6 +53,8 @@ class CVERepository:
             references=references,
             is_cisa_kev=record.is_cisa_kev,
             cisa_action_due=record.cisa_action_due,
+            epss_score=record.epss_score,
+            epss_percentile=record.epss_percentile,
             published_at=record.first_seen_at,
             updated_at=record.last_updated_at,
         )
@@ -103,6 +105,8 @@ class CVERepository:
                     existing.references_json = refs_json
                     existing.is_cisa_kev = item.is_cisa_kev
                     existing.cisa_action_due = item.cisa_action_due
+                    existing.epss_score = item.epss_score
+                    existing.epss_percentile = item.epss_percentile
                     existing.content_hash = item.content_hash
                     existing.last_updated_at = now
                     await session.commit()
@@ -124,6 +128,8 @@ class CVERepository:
                     references_json=refs_json,
                     is_cisa_kev=item.is_cisa_kev,
                     cisa_action_due=item.cisa_action_due,
+                    epss_score=item.epss_score,
+                    epss_percentile=item.epss_percentile,
                     content_hash=item.content_hash,
                     first_seen_at=item.published_at or now,
                     last_updated_at=item.updated_at or now,

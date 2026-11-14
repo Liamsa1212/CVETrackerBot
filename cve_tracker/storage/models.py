@@ -41,6 +41,8 @@ class CVERecord(Base):
     references_json = Column(Text, nullable=False, default="[]")
     is_cisa_kev = Column(Boolean, nullable=False, default=False, index=True)
     cisa_action_due = Column(DateTime, nullable=True)
+    epss_score = Column(Float, nullable=True, index=True)
+    epss_percentile = Column(Float, nullable=True)
     content_hash = Column(String(64), nullable=False, index=True)
     first_seen_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     last_updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
