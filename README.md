@@ -1,7 +1,7 @@
 # 🛡️ CVE Tracker Bot v2.1
 
 <p align="center">
-  <img src="docs/assets/logo.jpg" alt="CVE Tracker Bot" width="220">
+  <img src="assets/logo.jpg" alt="CVE Tracker Bot" width="220">
 </p>
 
 <p align="center">
@@ -99,12 +99,11 @@ CVETrackerBot/
 │   ├── services/              # Dossier lookup, watchlist parser, digest, explainer
 │   ├── storage/               # Async SQLAlchemy engine & repository
 │   └── main.py                # Main application entry point
+├── assets/                    # Project media assets (logo, branding)
+│   └── logo.jpg
 ├── deploy/                    # Container & deployment configs
 │   ├── Dockerfile             # Multi-stage non-root container
 │   └── docker-compose.yml     # Orchestration with persistent volume
-├── docs/                      # Documentation, plans & assets
-│   ├── assets/logo.jpg        # Project logo
-│   └── superpowers/plans/     # Implementation specifications
 ├── tests/                     # Comprehensive test suite (35 tests)
 ├── .env.example               # Clean environment variables template
 ├── .gitignore                 # Standard git ignore
